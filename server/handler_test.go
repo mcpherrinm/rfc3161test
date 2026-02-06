@@ -432,7 +432,7 @@ func verifyTSTInfo(
 		t.Fatal("messageImprint algorithm mismatch")
 	}
 
-	if string(tstInfo.MessageImprint.HashedMessage) != string(hash) {
+	if !bytes.Equal(tstInfo.MessageImprint.HashedMessage, hash) {
 		t.Fatal("messageImprint hash mismatch")
 	}
 }

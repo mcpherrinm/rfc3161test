@@ -10,9 +10,17 @@ The server accepts DER-encoded `TimeStampReq` messages over HTTP and returns DER
 go build ./...
 ```
 
+## Generating a TSA key and certificate
+
+```bash
+go run ./cmd/tsakeygen -key tsa.key -cert tsa.crt
+```
+
+This creates a 2048-bit RSA private key (`tsa.key`) and a self-signed certificate (`tsa.crt`) suitable for the TSA server. Use `-bits` to change the key size.
+
 ## Running the server
 
-Generate a TSA key and certificate, then start the server:
+Start the server with the generated key and certificate:
 
 ```bash
 go run ./cmd/tsserver -key tsa.key -cert tsa.crt -addr :3161

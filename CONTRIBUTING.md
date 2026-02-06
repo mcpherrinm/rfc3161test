@@ -17,7 +17,7 @@ To run the same linter locally, install golangci-lint v2 and run:
 golangci-lint run ./...
 ```
 
-The linter configuration is in `.golangci.yml`. All linters are enabled by default (`default: all`), with `testpackage` disabled.
+The linter configuration is in `.golangci.yml`. All linters are enabled by default (`default: all`), with `testpackage` and the deprecated `wsl` disabled (replaced by `wsl_v5`).
 
 ### Installing golangci-lint
 

@@ -3,6 +3,9 @@ linters:
   default: all
   disable:
     - testpackage
+    - wsl
+  enable:
+    - wsl_v5
   settings:
     depguard:
       rules:

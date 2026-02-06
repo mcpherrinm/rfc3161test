@@ -23,8 +23,10 @@ rfc3161test/
 ├── server/         # HTTP handler and server wiring
 │   └── handler.go  # POST handler: application/timestamp-query → application/timestamp-reply
 ├── cmd/
-│   └── tsserver/
-│       └── main.go # Entry point: flags, key loading, listen
+│   ├── tsserver/
+│   │   └── main.go # Server entry point: flags, key loading, listen
+│   └── tsclient/
+│       └── main.go # Client CLI: build and POST a TimeStampReq, print result
 ├── .github/
 │   └── workflows/
 │       └── ci.yml  # GitHub Actions: build, test, fuzz, lint
@@ -111,11 +113,21 @@ Error cases:
 - Wrong content type → 400.
 - Malformed DER → return `TimeStampResp` with `badDataFormat`.
 
-### 4. Entry Point (`cmd/tsserver/`)
+### 4. Entry Point — Server (`cmd/tsserver/`)
 
 - Load TSA private key and certificate from PEM files (paths via flags).
 - Bind to configurable address (default `:3161`).
 - Start HTTP server.
+
+### 5. Entry Point — Client (`cmd/tsclient/`)
+
+Command-line tool that builds and sends a `TimeStampReq`:
+
+- Accept flags: server URL, file to hash (or raw hash), hash algorithm.
+- Hash the input with the selected algorithm.
+- Construct a DER-encoded `TimeStampReq` with a random nonce.
+- POST to the server with `Content-Type: application/timestamp-query`.
+- Decode the `TimeStampResp`, verify status, and print the result.
 
 ## Serial Number Uniqueness
 
@@ -145,6 +157,16 @@ Use `net/http/httptest.Server` to run the full HTTP flow:
 
 Integration test as client:
 - Build a `TimeStampReq`, POST to test server, decode `TimeStampResp`, verify `TSTInfo` fields match request, verify CMS signature.
+
+### End-to-End Test (`cmd/integration_test.go`)
+
+A test that exercises the server and client binaries together:
+
+1. Generate an ephemeral TSA key + certificate.
+2. Start `cmd/tsserver` as an in-process `httptest` server.
+3. Run the client logic against the running server with a test file.
+4. Verify the client receives a valid timestamp response.
+5. Verify the response contains correct nonce, policy, and message imprint.
 
 ### Fuzz Tests (`*_fuzz_test.go`)
 
@@ -192,6 +214,13 @@ jobs:
 
 ## Implementation Phases
 
+### Phase 0: Project Scaffolding & CI
+- Initialize Go module (`go.mod`).
+- Create package directory structure (`asn1/`, `tsp/`, `server/`, `cmd/tsserver/`, `cmd/tsclient/`) with placeholder files so the project compiles.
+- Add `.github/workflows/ci.yml` with build, test, and golangci-lint jobs.
+- Add `.golangci.yml` configuration.
+- Verify CI runs green on the scaffolding before writing any logic.
+
 ### Phase 1: ASN.1 Types & Request Parsing
 - Define Go structs mapping to RFC 3161 ASN.1 types.
 - Implement `ParseRequest` using `encoding/asn1.Unmarshal`.
@@ -204,16 +233,17 @@ jobs:
 - Implement `PKIStatusInfo` for success and failure cases.
 - Unit tests for response construction and signature verification.
 
-### Phase 3: HTTP Server
+### Phase 3: HTTP Server & Client CLI
 - Implement HTTP handler with content-type checks and body size limit.
 - Wire up to `cmd/tsserver/main.go`.
+- Implement `cmd/tsclient/main.go` for requesting timestamps from the command line.
 - Integration tests with `httptest`.
+- End-to-end integration test running server and client together.
 - Fuzz test for HTTP handler.
 
-### Phase 4: CI & Polish
-- Add GitHub Actions workflow.
-- Add golangci-lint configuration.
-- End-to-end test: build server, run, submit request with test client, verify response.
+### Phase 4: Polish
+- Final lint and CI check.
+- Review for code brevity and RFC compliance.
 
 ## Key Design Decisions
 

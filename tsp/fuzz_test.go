@@ -1,20 +1,18 @@
-package tsp_test
+package tsp
 
 import (
 	"crypto/sha256"
 	"encoding/asn1"
 	"testing"
-
-	"github.com/mcpherrinm/rfc3161test/tsp"
 )
 
 func FuzzParseRequest(f *testing.F) {
 	hash := sha256.Sum256([]byte("test"))
-	req := tsp.TimeStampReq{
+	req := TimeStampReq{
 		Version: 1,
-		MessageImprint: tsp.MessageImprint{
-			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA256,
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
+				Algorithm:  OIDSHA256,
 				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 			},
 			HashedMessage: hash[:],
@@ -34,6 +32,6 @@ func FuzzParseRequest(f *testing.F) {
 	f.Add([]byte{0x30, 0x03, 0x02, 0x01, 0x01})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		_, _ = tsp.ParseRequest(data)
+		_, _ = ParseRequest(data)
 	})
 }

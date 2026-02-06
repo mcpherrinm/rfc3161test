@@ -1,4 +1,4 @@
-package tsp_test
+package tsp
 
 import (
 	"crypto/sha256"
@@ -7,11 +7,9 @@ import (
 	"errors"
 	"math/big"
 	"testing"
-
-	"github.com/mcpherrinm/rfc3161test/tsp"
 )
 
-func mustMarshalRequest(t *testing.T, req tsp.TimeStampReq) []byte {
+func mustMarshalRequest(t *testing.T, req TimeStampReq) []byte {
 	t.Helper()
 
 	der, err := asn1.Marshal(req)
@@ -22,16 +20,16 @@ func mustMarshalRequest(t *testing.T, req tsp.TimeStampReq) []byte {
 	return der
 }
 
-func validRequest(t *testing.T) tsp.TimeStampReq {
+func validRequest(t *testing.T) TimeStampReq {
 	t.Helper()
 
 	hash := sha256.Sum256([]byte("test data"))
 
-	return tsp.TimeStampReq{
+	return TimeStampReq{
 		Version: 1,
-		MessageImprint: tsp.MessageImprint{
-			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA256,
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
+				Algorithm:  OIDSHA256,
 				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 			},
 			HashedMessage: hash[:],
@@ -49,7 +47,7 @@ func TestParseValidRequest(t *testing.T) {
 	req := validRequest(t)
 	der := mustMarshalRequest(t, req)
 
-	parsed, err := tsp.ParseRequest(der)
+	parsed, err := ParseRequest(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +56,7 @@ func TestParseValidRequest(t *testing.T) {
 		t.Fatalf("version = %d, want 1", parsed.Version)
 	}
 
-	if !parsed.MessageImprint.HashAlgorithm.Algorithm.Equal(tsp.OIDSHA256) {
+	if !parsed.MessageImprint.HashAlgorithm.Algorithm.Equal(OIDSHA256) {
 		t.Fatal("wrong hash algorithm")
 	}
 }
@@ -71,7 +69,7 @@ func TestParseRequestWithNonce(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	parsed, err := tsp.ParseRequest(der)
+	parsed, err := ParseRequest(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,11 +87,11 @@ func TestParseRequestWithPolicy(t *testing.T) {
 	t.Parallel()
 
 	req := validRequest(t)
-	req.ReqPolicy = tsp.OIDDefaultPolicy
+	req.ReqPolicy = OIDDefaultPolicy
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +105,7 @@ func TestParseRequestWithCertReq(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	parsed, err := tsp.ParseRequest(der)
+	parsed, err := ParseRequest(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,11 +119,11 @@ func TestParseRequestSHA384(t *testing.T) {
 	t.Parallel()
 
 	hash := sha512.Sum384([]byte("test data"))
-	req := tsp.TimeStampReq{
+	req := TimeStampReq{
 		Version: 1,
-		MessageImprint: tsp.MessageImprint{
-			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA384,
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
+				Algorithm:  OIDSHA384,
 				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 			},
 			HashedMessage: hash[:],
@@ -138,7 +136,7 @@ func TestParseRequestSHA384(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,11 +146,11 @@ func TestParseRequestSHA512(t *testing.T) {
 	t.Parallel()
 
 	hash := sha512.Sum512([]byte("test data"))
-	req := tsp.TimeStampReq{
+	req := TimeStampReq{
 		Version: 1,
-		MessageImprint: tsp.MessageImprint{
-			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA512,
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
+				Algorithm:  OIDSHA512,
 				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 			},
 			HashedMessage: hash[:],
@@ -165,7 +163,7 @@ func TestParseRequestSHA512(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,18 +177,18 @@ func TestParseRequestWrongVersion(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err == nil {
 		t.Fatal("expected error for wrong version")
 	}
 
-	var re *tsp.RequestError
-	if !errors.As(err, &re) {
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
 		t.Fatal("expected RequestError")
 	}
 
-	if re.FailureInfo != tsp.FailureBadDataFormat {
-		t.Fatalf("failureInfo = %d, want %d", re.FailureInfo, tsp.FailureBadDataFormat)
+	if reqErr.FailureInfo != FailureBadDataFormat {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureBadDataFormat)
 	}
 }
 
@@ -198,10 +196,10 @@ func TestParseRequestBadAlg(t *testing.T) {
 	t.Parallel()
 
 	hash := sha256.Sum256([]byte("test"))
-	req := tsp.TimeStampReq{
+	req := TimeStampReq{
 		Version: 1,
-		MessageImprint: tsp.MessageImprint{
-			HashAlgorithm: tsp.AlgorithmIdentifier{
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
 				Algorithm:  asn1.ObjectIdentifier{1, 2, 3, 4, 5},
 				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 			},
@@ -215,29 +213,29 @@ func TestParseRequestBadAlg(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err == nil {
 		t.Fatal("expected error for unknown algorithm")
 	}
 
-	var re *tsp.RequestError
-	if !errors.As(err, &re) {
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
 		t.Fatal("expected RequestError")
 	}
 
-	if re.FailureInfo != tsp.FailureBadAlg {
-		t.Fatalf("failureInfo = %d, want %d", re.FailureInfo, tsp.FailureBadAlg)
+	if reqErr.FailureInfo != FailureBadAlg {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureBadAlg)
 	}
 }
 
 func TestParseRequestHashLengthMismatch(t *testing.T) {
 	t.Parallel()
 
-	req := tsp.TimeStampReq{
+	req := TimeStampReq{
 		Version: 1,
-		MessageImprint: tsp.MessageImprint{
-			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA256,
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
+				Algorithm:  OIDSHA256,
 				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 			},
 			HashedMessage: []byte("short"),
@@ -250,18 +248,18 @@ func TestParseRequestHashLengthMismatch(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err == nil {
 		t.Fatal("expected error for hash length mismatch")
 	}
 
-	var re *tsp.RequestError
-	if !errors.As(err, &re) {
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
 		t.Fatal("expected RequestError")
 	}
 
-	if re.FailureInfo != tsp.FailureBadDataFormat {
-		t.Fatalf("failureInfo = %d, want %d", re.FailureInfo, tsp.FailureBadDataFormat)
+	if reqErr.FailureInfo != FailureBadDataFormat {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureBadDataFormat)
 	}
 }
 
@@ -273,18 +271,18 @@ func TestParseRequestUnacceptedPolicy(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err == nil {
 		t.Fatal("expected error for unaccepted policy")
 	}
 
-	var re *tsp.RequestError
-	if !errors.As(err, &re) {
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
 		t.Fatal("expected RequestError")
 	}
 
-	if re.FailureInfo != tsp.FailureUnacceptedPolicy {
-		t.Fatalf("failureInfo = %d, want %d", re.FailureInfo, tsp.FailureUnacceptedPolicy)
+	if reqErr.FailureInfo != FailureUnacceptedPolicy {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureUnacceptedPolicy)
 	}
 }
 
@@ -292,7 +290,7 @@ func TestParseRequestUnacceptedExtension(t *testing.T) {
 	t.Parallel()
 
 	req := validRequest(t)
-	req.Extensions = []tsp.Extension{{
+	req.Extensions = []Extension{{
 		ID:       asn1.ObjectIdentifier{1, 2, 3, 4, 5},
 		Critical: false,
 		Value:    []byte{0x01},
@@ -300,18 +298,18 @@ func TestParseRequestUnacceptedExtension(t *testing.T) {
 
 	der := mustMarshalRequest(t, req)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err == nil {
 		t.Fatal("expected error for unaccepted extension")
 	}
 
-	var re *tsp.RequestError
-	if !errors.As(err, &re) {
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
 		t.Fatal("expected RequestError")
 	}
 
-	if re.FailureInfo != tsp.FailureUnacceptedExtension {
-		t.Fatalf("failureInfo = %d, want %d", re.FailureInfo, tsp.FailureUnacceptedExtension)
+	if reqErr.FailureInfo != FailureUnacceptedExtension {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureUnacceptedExtension)
 	}
 }
 
@@ -322,7 +320,7 @@ func TestParseRequestTrailingData(t *testing.T) {
 	der := mustMarshalRequest(t, req)
 	der = append(der, 0x00)
 
-	_, err := tsp.ParseRequest(der)
+	_, err := ParseRequest(der)
 	if err == nil {
 		t.Fatal("expected error for trailing data")
 	}
@@ -331,25 +329,25 @@ func TestParseRequestTrailingData(t *testing.T) {
 func TestParseRequestInvalidDER(t *testing.T) {
 	t.Parallel()
 
-	_, err := tsp.ParseRequest([]byte{0x00, 0x01, 0x02})
+	_, err := ParseRequest([]byte{0x00, 0x01, 0x02})
 	if err == nil {
 		t.Fatal("expected error for invalid DER")
 	}
 
-	var re *tsp.RequestError
-	if !errors.As(err, &re) {
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
 		t.Fatal("expected RequestError")
 	}
 
-	if re.FailureInfo != tsp.FailureBadDataFormat {
-		t.Fatalf("failureInfo = %d, want %d", re.FailureInfo, tsp.FailureBadDataFormat)
+	if reqErr.FailureInfo != FailureBadDataFormat {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureBadDataFormat)
 	}
 }
 
 func TestParseRequestEmpty(t *testing.T) {
 	t.Parallel()
 
-	_, err := tsp.ParseRequest(nil)
+	_, err := ParseRequest(nil)
 	if err == nil {
 		t.Fatal("expected error for empty input")
 	}

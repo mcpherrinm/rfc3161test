@@ -1,9 +1,7 @@
-package tsp_test
+package tsp
 
 import (
 	"testing"
-
-	"github.com/mcpherrinm/rfc3161test/tsp"
 )
 
 func TestFailureInfoBitString(t *testing.T) {
@@ -11,28 +9,28 @@ func TestFailureInfoBitString(t *testing.T) {
 
 	tests := []struct {
 		name string
-		bit  tsp.PKIFailureInfo
+		bit  PKIFailureInfo
 	}{
-		{"badAlg", tsp.FailureBadAlg},
-		{"badRequest", tsp.FailureBadRequest},
-		{"badDataFormat", tsp.FailureBadDataFormat},
-		{"timeNotAvailable", tsp.FailureTimeNotAvailable},
-		{"unacceptedPolicy", tsp.FailureUnacceptedPolicy},
-		{"unacceptedExtension", tsp.FailureUnacceptedExtension},
-		{"addInfoNotAvailable", tsp.FailureAddInfoNotAvailable},
-		{"systemFailure", tsp.FailureSystemFailure},
+		{"badAlg", FailureBadAlg},
+		{"badRequest", FailureBadRequest},
+		{"badDataFormat", FailureBadDataFormat},
+		{"timeNotAvailable", FailureTimeNotAvailable},
+		{"unacceptedPolicy", FailureUnacceptedPolicy},
+		{"unacceptedExtension", FailureUnacceptedExtension},
+		{"addInfoNotAvailable", FailureAddInfoNotAvailable},
+		{"systemFailure", FailureSystemFailure},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			bs := tsp.FailureInfoBitString(tt.bit)
-			if bs.BitLength != int(tt.bit)+1 {
-				t.Fatalf("BitLength = %d, want %d", bs.BitLength, int(tt.bit)+1)
+			bs := FailureInfoBitString(testCase.bit)
+			if bs.BitLength != int(testCase.bit)+1 {
+				t.Fatalf("BitLength = %d, want %d", bs.BitLength, int(testCase.bit)+1)
 			}
 
-			if bs.At(int(tt.bit)) != 1 {
+			if bs.At(int(testCase.bit)) != 1 {
 				t.Fatal("expected bit to be set")
 			}
 		})

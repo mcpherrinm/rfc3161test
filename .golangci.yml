@@ -3,3 +3,11 @@ linters:
   default: all
   disable:
     - testpackage
+  settings:
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          allow:
+            - $gostd
+            - github.com/mcpherrinm/rfc3161test

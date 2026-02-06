@@ -15,10 +15,9 @@ An HTTP-based Time-Stamp Authority (TSA) server implementing RFC 3161 (Internet 
 
 ```
 rfc3161test/
-├── asn1/           # DER encoding/decoding helpers beyond encoding/asn1
-├── tsp/            # RFC 3161 types and logic
+├── tsp/            # RFC 3161 types, logic, and DER helpers
 │   ├── request.go  # TimeStampReq parsing and validation
-│   ├── response.go # TimeStampResp / TSTInfo construction
+│   ├── response.go # TimeStampResp / TSTInfo construction, CMS SignedData, DER helpers
 │   └── oid.go      # OID constants (hash algorithms, id-ct-TSTInfo, policy)
 ├── server/         # HTTP handler and server wiring
 │   └── handler.go  # POST handler: application/timestamp-query → application/timestamp-reply
@@ -37,15 +36,7 @@ rfc3161test/
 
 ## Core Components
 
-### 1. ASN.1 / DER Layer (`asn1/`)
-
-Go's `encoding/asn1` handles most DER work. This package provides any supplementary helpers needed for:
-
-- Encoding/decoding BIT STRING values for `PKIFailureInfo` (bit-indexed, not byte-indexed).
-- Building CMS `ContentInfo` / `SignedData` structures that wrap `TSTInfo`.
-- Encoding `GeneralizedTime` with sub-second precision and DER rules (no trailing zeros, mandatory `Z` suffix).
-
-### 2. TSP Types & Logic (`tsp/`)
+### 1. TSP Types & Logic (`tsp/`)
 
 **request.go** — Parse and validate `TimeStampReq`:
 
@@ -79,7 +70,7 @@ TimeStampResp ::= SEQUENCE {
 On success (`status = granted`):
 1. Construct `TSTInfo` with server policy OID, echoed `messageImprint`, monotonic `serialNumber`, `genTime` (current UTC), and echoed `nonce` if present.
 2. DER-encode `TSTInfo`.
-3. Wrap in CMS `SignedData` (`eContentType = id-ct-TSTInfo`), sign with the TSA's RSA/ECDSA private key.
+3. Wrap in CMS `SignedData` (`eContentType = id-ct-TSTInfo`), sign with the TSA's RSA private key.
 4. Wrap `SignedData` in `ContentInfo`.
 5. If `certReq` is true, include the TSA certificate in `SignedData.certificates`.
 
@@ -96,7 +87,7 @@ On failure, return `PKIStatusInfo` with appropriate `PKIFailureInfo` bit and no 
 | SHA-512 | 2.16.840.1.101.3.4.2.3 |
 | TSA policy | 1.2.3.4.1 (configurable) |
 
-### 3. HTTP Server (`server/`)
+### 2. HTTP Server (`server/`)
 
 Single endpoint: `POST /`
 
@@ -113,13 +104,13 @@ Error cases:
 - Wrong content type → 400.
 - Malformed DER → return `TimeStampResp` with `badDataFormat`.
 
-### 4. Entry Point — Server (`cmd/tsserver/`)
+### 3. Entry Point — Server (`cmd/tsserver/`)
 
 - Load TSA private key and certificate from PEM files (paths via flags).
 - Bind to configurable address (default `:3161`).
 - Start HTTP server.
 
-### 5. Entry Point — Client (`cmd/tsclient/`)
+### 4. Entry Point — Client (`cmd/tsclient/`)
 
 Command-line tool that builds and sends a `TimeStampReq`:
 
@@ -194,10 +185,10 @@ jobs:
   build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version: stable
+          go-version-file: go.mod
       - run: go build ./...
       - run: go test -race ./...
       - run: go test -fuzz=FuzzParseRequest -fuzztime=30s ./tsp/
@@ -205,18 +196,18 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
-          go-version: stable
-      - uses: golangci/golangci-lint-action@v6
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v9
 ```
 
 ## Implementation Phases
 
 ### Phase 0: Project Scaffolding & CI
 - Initialize Go module (`go.mod`).
-- Create package directory structure (`asn1/`, `tsp/`, `server/`, `cmd/tsserver/`, `cmd/tsclient/`) with placeholder files so the project compiles.
+- Create package directory structure (`tsp/`, `server/`, `cmd/tsserver/`, `cmd/tsclient/`) with placeholder files so the project compiles.
 - Add `.github/workflows/ci.yml` with build, test, and golangci-lint jobs.
 - Add `.golangci.yml` configuration.
 - Verify CI runs green on the scaffolding before writing any logic.
@@ -229,7 +220,7 @@ jobs:
 
 ### Phase 2: Response Building & CMS Signing
 - Implement `TSTInfo` construction and DER encoding.
-- Build CMS `SignedData` wrapper using `crypto/x509` and `crypto/rsa` or `crypto/ecdsa`.
+- Build CMS `SignedData` wrapper using `crypto/x509` and `crypto/rsa`.
 - Implement `PKIStatusInfo` for success and failure cases.
 - Unit tests for response construction and signature verification.
 
@@ -244,6 +235,7 @@ jobs:
 ### Phase 4: Polish
 - Final lint and CI check.
 - Review for code brevity and RFC compliance.
+- Remove unused `asn1/` placeholder package (helpers consolidated into `tsp/`).
 
 ## Key Design Decisions
 

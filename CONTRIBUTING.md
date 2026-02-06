@@ -36,7 +36,6 @@ curl -sSfL https://github.com/golangci/golangci-lint/releases/download/v2.8.0/go
 - **err113**: Do not use `errors.New()` inline in return statements; define package-level sentinel errors instead.
 - **lll**: Lines must not exceed 120 characters.
 - **varnamelen**: Variable names must be long enough for their scope.
-- **mnd**: Magic numbers need a `//nolint:mnd` directive with a reason.
 
 ## Fuzzing
 

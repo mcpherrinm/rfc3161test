@@ -129,9 +129,9 @@ var algRSASHA256 = AlgorithmIdentifier{
 // FailureInfoBitString encodes a PKIFailureInfo bit position as an ASN.1 BIT STRING.
 func FailureInfoBitString(bit PKIFailureInfo) asn1.BitString {
 	bitLen := int(bit) + 1
-	byteLen := (bitLen + 7) / 8 //nolint:mnd // bit-to-byte conversion
+	byteLen := (bitLen + 7) / 8
 	bytes := make([]byte, byteLen)
-	bytes[int(bit)/8] |= 0x80 >> (uint(bit) % 8) //nolint:mnd,gosec // bit indexing
+	bytes[int(bit)/8] |= 0x80 >> (uint(bit) % 8) //nolint:gosec // bit indexing
 
 	return asn1.BitString{Bytes: bytes, BitLength: bitLen}
 }
@@ -306,7 +306,7 @@ func marshalSignerInfo(signer *Signer, signedAttrsDER, signature []byte) ([]byte
 }
 
 func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, includeCert bool) ([]byte, error) {
-	versionDER, err := asn1.Marshal(3) //nolint:mnd // CMS SignedData version
+	versionDER, err := asn1.Marshal(3)
 	if err != nil {
 		return nil, fmt.Errorf("marshal version: %w", err)
 	}

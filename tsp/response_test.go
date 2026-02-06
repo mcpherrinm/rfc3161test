@@ -49,19 +49,19 @@ func TestFailureInfoBitString(t *testing.T) {
 func testSigner(t *testing.T) *Signer {
 	t.Helper()
 
-	key, err := rsa.GenerateKey(rand.Reader, 2048) //nolint:mnd // test key size
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	tmpl := &x509.Certificate{
+	tmpl := &x509.Certificate{ //nolint:exhaustruct // test cert: only fields relevant for TSA
 		SerialNumber:          big.NewInt(1),
-		Subject:               pkix.Name{CommonName: "Test TSA"},      //nolint:exhaustruct // test cert
-		NotBefore:             time.Now().Add(-time.Hour),              //nolint:mnd // test cert validity
-		NotAfter:              time.Now().Add(time.Hour),               //nolint:mnd // test cert validity
-		KeyUsage:              x509.KeyUsageDigitalSignature,           //nolint:exhaustruct // test cert
-		BasicConstraintsValid: true,                                    //nolint:exhaustruct // test cert
-	} //nolint:exhaustruct // test cert
+		Subject:               pkix.Name{CommonName: "Test TSA"}, //nolint:exhaustruct // test cert
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	if err != nil {
@@ -73,7 +73,7 @@ func testSigner(t *testing.T) *Signer {
 		t.Fatal(err)
 	}
 
-	return &Signer{Key: key, Certificate: cert}
+	return &Signer{Key: key, Certificate: cert} //nolint:exhaustruct // serial starts at zero
 }
 
 func TestCreateResponseGranted(t *testing.T) {
@@ -106,7 +106,9 @@ func TestCreateResponseNonceEcho(t *testing.T) {
 
 	signer := testSigner(t)
 	req := validRequest(t)
-	req.Nonce = big.NewInt(99999) //nolint:mnd // test nonce value
+
+	nonce := big.NewInt(99999)
+	req.Nonce = nonce
 
 	respDER, err := signer.CreateResponse(&req)
 	if err != nil {
@@ -119,8 +121,8 @@ func TestCreateResponseNonceEcho(t *testing.T) {
 	}
 
 	tstInfo := extractTSTInfo(t, resp)
-	if tstInfo.Nonce == nil || tstInfo.Nonce.Cmp(big.NewInt(99999)) != 0 { //nolint:mnd // test nonce value
-		t.Fatalf("nonce = %v, want 99999", tstInfo.Nonce)
+	if tstInfo.Nonce == nil || tstInfo.Nonce.Cmp(nonce) != 0 {
+		t.Fatalf("nonce = %v, want %v", tstInfo.Nonce, nonce)
 	}
 }
 
@@ -175,8 +177,8 @@ func TestCreateResponseCertReqTrue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sd := extractSignedData(t, resp)
-	if len(sd.Certificates.Bytes) == 0 {
+	parsedSD := extractSignedData(t, resp)
+	if len(parsedSD.Certificates.Bytes) == 0 {
 		t.Fatal("certificates should be present when certReq is true")
 	}
 }
@@ -198,8 +200,8 @@ func TestCreateResponseCertReqFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sd := extractSignedData(t, resp)
-	if len(sd.Certificates.Bytes) != 0 {
+	parsedSD := extractSignedData(t, resp)
+	if len(parsedSD.Certificates.Bytes) != 0 {
 		t.Fatal("certificates should be absent when certReq is false")
 	}
 }
@@ -264,18 +266,18 @@ func TestCreateResponseSignatureVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sd := extractSignedData(t, resp)
-	si := extractSignerInfo(t, sd)
+	parsedSD := extractSignedData(t, resp)
+	parsedSI := extractSignerInfo(t, parsedSD)
 
 	// Rebuild signed attributes with SET tag for verification.
-	attrBytes := si.SignedAttrs.FullBytes
+	attrBytes := parsedSI.SignedAttrs.FullBytes
 	setBuf := make([]byte, len(attrBytes))
 	copy(setBuf, attrBytes)
 	setBuf[0] = 0x31
 
-	h := sha256.Sum256(setBuf)
+	digest := sha256.Sum256(setBuf)
 
-	err = rsa.VerifyPKCS1v15(&signer.Key.PublicKey, crypto.SHA256, h[:], si.Signature)
+	err = rsa.VerifyPKCS1v15(&signer.Key.PublicKey, crypto.SHA256, digest[:], parsedSI.Signature)
 	if err != nil {
 		t.Fatalf("signature verification failed: %v", err)
 	}
@@ -297,8 +299,8 @@ func TestCreateResponseEContentType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sd := extractSignedData(t, resp)
-	if !sd.EncapContentInfo.EContentType.Equal(OIDTSTInfo) {
+	parsedSD := extractSignedData(t, resp)
+	if !parsedSD.EncapContentInfo.EContentType.Equal(OIDTSTInfo) {
 		t.Fatal("eContentType should be id-ct-TSTInfo")
 	}
 }
@@ -350,37 +352,37 @@ func TestCreateErrorResponseBadDataFormat(t *testing.T) {
 func extractSignedData(t *testing.T, resp *TimeStampResp) signedData {
 	t.Helper()
 
-	var sd signedData
+	var parsed signedData
 
-	_, err := asn1.Unmarshal(resp.TimeStampToken.Content.Bytes, &sd)
+	_, err := asn1.Unmarshal(resp.TimeStampToken.Content.Bytes, &parsed)
 	if err != nil {
 		t.Fatalf("unmarshal SignedData: %v", err)
 	}
 
-	return sd
+	return parsed
 }
 
-func extractSignerInfo(t *testing.T, sd signedData) signerInfo {
+func extractSignerInfo(t *testing.T, parsed signedData) signerInfo {
 	t.Helper()
 
-	var si signerInfo
+	var info signerInfo
 
-	_, err := asn1.Unmarshal(sd.SignerInfos.Bytes, &si)
+	_, err := asn1.Unmarshal(parsed.SignerInfos.Bytes, &info)
 	if err != nil {
 		t.Fatalf("unmarshal SignerInfo: %v", err)
 	}
 
-	return si
+	return info
 }
 
 func extractTSTInfo(t *testing.T, resp *TimeStampResp) TSTInfo {
 	t.Helper()
 
-	sd := extractSignedData(t, resp)
+	parsedSD := extractSignedData(t, resp)
 
 	var eContentOctet []byte
 
-	_, err := asn1.Unmarshal(sd.EncapContentInfo.EContent.Bytes, &eContentOctet)
+	_, err := asn1.Unmarshal(parsedSD.EncapContentInfo.EContent.Bytes, &eContentOctet)
 	if err != nil {
 		t.Fatalf("unmarshal eContent OCTET STRING: %v", err)
 	}

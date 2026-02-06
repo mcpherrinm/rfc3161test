@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"encoding/asn1"
 	"errors"
+	"fmt"
 	"math/big"
 	"sync/atomic"
 	"time"
@@ -110,6 +111,9 @@ type Signer struct {
 	serial      atomic.Int64
 }
 
+// ErrTrailingData is returned when a TimeStampResp has trailing bytes.
+var ErrTrailingData = errors.New("trailing data in TimeStampResp")
+
 // FailureInfoBitString encodes a PKIFailureInfo bit position as an ASN.1 BIT STRING.
 func FailureInfoBitString(bit PKIFailureInfo) asn1.BitString {
 	bitLen := int(bit) + 1
@@ -122,21 +126,27 @@ func FailureInfoBitString(bit PKIFailureInfo) asn1.BitString {
 
 // CreateErrorResponse builds a TimeStampResp indicating failure.
 func CreateErrorResponse(failure PKIFailureInfo) ([]byte, error) {
-	resp := TimeStampResp{
+	resp := TimeStampResp{ //nolint:exhaustruct // no token on failure
 		Status: PKIStatusInfo{
-			Status:   StatusRejection,
-			FailInfo: FailureInfoBitString(failure),
+			Status:       StatusRejection,
+			StatusString: nil,
+			FailInfo:     FailureInfoBitString(failure),
 		},
 	}
 
-	return asn1.Marshal(resp)
+	der, err := asn1.Marshal(resp)
+	if err != nil {
+		return nil, fmt.Errorf("marshal error response: %w", err)
+	}
+
+	return der, nil
 }
 
 // CreateResponse builds a granted TimeStampResp for the given request.
-func (s *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
-	serial := s.serial.Add(1)
+func (signer *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
+	serial := signer.serial.Add(1)
 
-	tstInfo := TSTInfo{
+	tstInfo := TSTInfo{ //nolint:exhaustruct // optional fields left zero
 		Version:        1,
 		Policy:         OIDDefaultPolicy,
 		MessageImprint: req.MessageImprint,
@@ -147,10 +157,10 @@ func (s *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
 
 	tstInfoDER, err := asn1.Marshal(tstInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal TSTInfo: %w", err)
 	}
 
-	token, err := s.signCMS(tstInfoDER, req.CertReq)
+	token, err := signer.signCMS(tstInfoDER, req.CertReq)
 	if err != nil {
 		return nil, err
 	}
@@ -160,46 +170,61 @@ func (s *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
 		return nil, err
 	}
 
-	statusDER, err := asn1.Marshal(PKIStatusInfo{Status: StatusGranted})
+	statusDER, err := asn1.Marshal(PKIStatusInfo{ //nolint:exhaustruct // success has no FailInfo
+		Status:       StatusGranted,
+		StatusString: nil,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal status: %w", err)
 	}
 
-	return asn1.Marshal(asn1.RawValue{
+	respBytes := concat(statusDER, tokenCI)
+
+	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SEQUENCE
 		Class:      asn1.ClassUniversal,
 		Tag:        asn1.TagSequence,
 		IsCompound: true,
-		Bytes:      append(statusDER, tokenCI...),
+		Bytes:      respBytes,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal response: %w", err)
+	}
+
+	return der, nil
 }
 
 func marshalContentInfo(contentType asn1.ObjectIdentifier, content []byte) ([]byte, error) {
 	oidDER, err := asn1.Marshal(contentType)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal content type OID: %w", err)
 	}
 
-	explicitDER, err := asn1.Marshal(asn1.RawValue{
+	explicitDER, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER [0] EXPLICIT
 		Class:      asn1.ClassContextSpecific,
 		Tag:        0,
 		IsCompound: true,
 		Bytes:      content,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal explicit tag: %w", err)
 	}
 
-	inner := append(oidDER, explicitDER...)
+	inner := concat(oidDER, explicitDER)
 
-	return asn1.Marshal(asn1.RawValue{
+	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SEQUENCE
 		Class:      asn1.ClassUniversal,
 		Tag:        asn1.TagSequence,
 		IsCompound: true,
 		Bytes:      inner,
 	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal content info: %w", err)
+	}
+
+	return der, nil
 }
 
-func (s *Signer) signCMS(tstInfoDER []byte, includeCert bool) ([]byte, error) {
+func (signer *Signer) signCMS(tstInfoDER []byte, includeCert bool) ([]byte, error) {
 	digest := sha256.Sum256(tstInfoDER)
 
 	signedAttrsDER, err := buildSignedAttrsDER(digest[:])
@@ -214,71 +239,91 @@ func (s *Signer) signCMS(tstInfoDER []byte, includeCert bool) ([]byte, error) {
 
 	attrDigest := sha256.Sum256(setBytes)
 
-	sig, err := rsa.SignPKCS1v15(rand.Reader, s.Key, crypto.SHA256, attrDigest[:])
+	signature, err := rsa.SignPKCS1v15(rand.Reader, signer.Key, crypto.SHA256, attrDigest[:])
+	if err != nil {
+		return nil, fmt.Errorf("sign: %w", err)
+	}
+
+	siDER, err := marshalSignerInfo(signer, signedAttrsDER, signature)
 	if err != nil {
 		return nil, err
 	}
 
-	siDER, err := marshalSignerInfo(s, signedAttrsDER, sig)
-	if err != nil {
-		return nil, err
-	}
-
-	return marshalSignedData(tstInfoDER, siDER, s.Certificate, includeCert)
+	return marshalSignedData(tstInfoDER, siDER, signer.Certificate, includeCert)
 }
 
-func marshalSignerInfo(s *Signer, signedAttrsDER, sig []byte) ([]byte, error) {
+func marshalSignerInfo(signer *Signer, signedAttrsDER, signature []byte) ([]byte, error) {
 	versionDER, err := asn1.Marshal(1)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal version: %w", err)
 	}
 
 	sidDER, err := asn1.Marshal(issuerAndSerialNumber{
-		Issuer:       asn1.RawValue{FullBytes: s.Certificate.RawIssuer}, //nolint:exhaustruct // raw DER
-		SerialNumber: s.Certificate.SerialNumber,
+		Issuer:       asn1.RawValue{FullBytes: signer.Certificate.RawIssuer}, //nolint:exhaustruct // raw DER
+		SerialNumber: signer.Certificate.SerialNumber,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal SID: %w", err)
 	}
 
-	digestAlgDER, err := asn1.Marshal(AlgorithmIdentifier{Algorithm: OIDSHA256})
-	if err != nil {
-		return nil, err
+	sha256Alg := AlgorithmIdentifier{
+		Algorithm:  OIDSHA256,
+		Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
 	}
 
-	sigAlgDER, err := asn1.Marshal(AlgorithmIdentifier{Algorithm: OIDRSASHA256})
+	digestAlgDER, err := asn1.Marshal(sha256Alg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal digest algorithm: %w", err)
 	}
 
-	sigDER, err := asn1.Marshal(sig)
+	rsaSHA256Alg := AlgorithmIdentifier{
+		Algorithm:  OIDRSASHA256,
+		Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+	}
+
+	sigAlgDER, err := asn1.Marshal(rsaSHA256Alg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal signature algorithm: %w", err)
+	}
+
+	sigDER, err := asn1.Marshal(signature)
+	if err != nil {
+		return nil, fmt.Errorf("marshal signature: %w", err)
 	}
 
 	inner := concat(versionDER, sidDER, digestAlgDER, signedAttrsDER, sigAlgDER, sigDER)
 
-	return asn1.Marshal(asn1.RawValue{
+	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SEQUENCE
 		Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true, Bytes: inner,
-	}) //nolint:exhaustruct // raw SEQUENCE
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal signer info: %w", err)
+	}
+
+	return der, nil
 }
 
 func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, includeCert bool) ([]byte, error) {
 	versionDER, err := asn1.Marshal(3) //nolint:mnd // CMS SignedData version
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal version: %w", err)
 	}
 
-	digestAlgDER, err := asn1.Marshal(AlgorithmIdentifier{Algorithm: OIDSHA256})
+	sha256Alg := AlgorithmIdentifier{
+		Algorithm:  OIDSHA256,
+		Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+	}
+
+	digestAlgDER, err := asn1.Marshal(sha256Alg)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal digest algorithm: %w", err)
 	}
 
-	digestAlgSetDER, err := asn1.Marshal(asn1.RawValue{
+	digestAlgSetDER, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SET
 		Tag: asn1.TagSet, IsCompound: true, Bytes: digestAlgDER,
-	}) //nolint:exhaustruct // raw SET
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal digest algorithm set: %w", err)
 	}
 
 	eciDER, err := marshalEncapContentInfo(tstInfoDER)
@@ -286,21 +331,21 @@ func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, include
 		return nil, err
 	}
 
-	siSetDER, err := asn1.Marshal(asn1.RawValue{
+	siSetDER, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SET
 		Tag: asn1.TagSet, IsCompound: true, Bytes: siDER,
-	}) //nolint:exhaustruct // raw SET
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal signer info set: %w", err)
 	}
 
 	inner := concat(versionDER, digestAlgSetDER, eciDER)
 
 	if includeCert {
-		certsDER, err := asn1.Marshal(asn1.RawValue{
+		certsDER, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER IMPLICIT [0]
 			Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: cert.Raw,
-		}) //nolint:exhaustruct // IMPLICIT [0]
+		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("marshal certificates: %w", err)
 		}
 
 		inner = append(inner, certsDER...)
@@ -308,36 +353,46 @@ func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, include
 
 	inner = append(inner, siSetDER...)
 
-	return asn1.Marshal(asn1.RawValue{
+	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SEQUENCE
 		Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true, Bytes: inner,
-	}) //nolint:exhaustruct // raw SEQUENCE
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal signed data: %w", err)
+	}
+
+	return der, nil
 }
 
 func marshalEncapContentInfo(tstInfoDER []byte) ([]byte, error) {
 	oidDER, err := asn1.Marshal(OIDTSTInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal OID: %w", err)
 	}
 
-	octetDER, err := asn1.Marshal(asn1.RawValue{
+	octetDER, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER OCTET STRING
 		Class: asn1.ClassUniversal, Tag: asn1.TagOctetString, Bytes: tstInfoDER,
-	}) //nolint:exhaustruct // OCTET STRING
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal octet string: %w", err)
 	}
 
-	explicitDER, err := asn1.Marshal(asn1.RawValue{
+	explicitDER, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER [0] EXPLICIT
 		Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: octetDER,
-	}) //nolint:exhaustruct // [0] EXPLICIT
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal explicit tag: %w", err)
 	}
 
-	inner := append(oidDER, explicitDER...)
+	inner := concat(oidDER, explicitDER)
 
-	return asn1.Marshal(asn1.RawValue{
+	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SEQUENCE
 		Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true, Bytes: inner,
-	}) //nolint:exhaustruct // SEQUENCE
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal encap content info: %w", err)
+	}
+
+	return der, nil
 }
 
 func buildSignedAttrsDER(digest []byte) ([]byte, error) {
@@ -346,42 +401,61 @@ func buildSignedAttrsDER(digest []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	digestAttr, err := marshalAttr(OIDAttributeMessageDigest, asn1.RawValue{
-		Class: asn1.ClassUniversal, Tag: asn1.TagOctetString, Bytes: digest,
-	}) //nolint:exhaustruct // OCTET STRING
+	digestOctet := asn1.RawValue{ //nolint:exhaustruct // manual DER OCTET STRING
+		Class: asn1.ClassUniversal,
+		Tag:   asn1.TagOctetString,
+		Bytes: digest,
+	}
+
+	digestAttr, err := marshalAttr(OIDAttributeMessageDigest, digestOctet)
 	if err != nil {
 		return nil, err
 	}
 
-	combined := append(contentTypeAttr, digestAttr...)
+	combined := concat(contentTypeAttr, digestAttr)
 
-	return asn1.Marshal(asn1.RawValue{
+	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER IMPLICIT [0]
 		Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: combined,
-	}) //nolint:exhaustruct // IMPLICIT [0]
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal signed attrs: %w", err)
+	}
+
+	return der, nil
 }
 
-func marshalAttr(oid asn1.ObjectIdentifier, value interface{}) ([]byte, error) {
+func marshalAttr(oid asn1.ObjectIdentifier, value any) ([]byte, error) {
 	valDER, err := asn1.Marshal(value)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("marshal attr value: %w", err)
 	}
 
 	attr := attribute{
 		Type: oid,
-		Values: asn1.RawValue{
+		Values: asn1.RawValue{ //nolint:exhaustruct // manual DER SET
 			Tag:        asn1.TagSet,
 			IsCompound: true,
 			Bytes:      valDER,
-		}, //nolint:exhaustruct // raw SET
+		},
 	}
 
-	return asn1.Marshal(attr)
+	der, err := asn1.Marshal(attr)
+	if err != nil {
+		return nil, fmt.Errorf("marshal attribute: %w", err)
+	}
+
+	return der, nil
 }
 
 func concat(slices ...[]byte) []byte {
-	var out []byte
-	for _, s := range slices {
-		out = append(out, s...)
+	total := 0
+	for _, slice := range slices {
+		total += len(slice)
+	}
+
+	out := make([]byte, 0, total)
+	for _, slice := range slices {
+		out = append(out, slice...)
 	}
 
 	return out
@@ -393,11 +467,11 @@ func ParseResponse(der []byte) (*TimeStampResp, error) {
 
 	rest, err := asn1.Unmarshal(der, &resp)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal TimeStampResp: %w", err)
 	}
 
 	if len(rest) > 0 {
-		return nil, errors.New("trailing data in TimeStampResp")
+		return nil, ErrTrailingData
 	}
 
 	return &resp, nil

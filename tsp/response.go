@@ -114,6 +114,18 @@ type Signer struct {
 // ErrTrailingData is returned when a TimeStampResp has trailing bytes.
 var ErrTrailingData = errors.New("trailing data in TimeStampResp")
 
+//nolint:gochecknoglobals // reusable algorithm identifiers
+var algSHA256 = AlgorithmIdentifier{
+	Algorithm:  OIDSHA256,
+	Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+}
+
+//nolint:gochecknoglobals // reusable algorithm identifiers
+var algRSASHA256 = AlgorithmIdentifier{
+	Algorithm:  OIDRSASHA256,
+	Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+}
+
 // FailureInfoBitString encodes a PKIFailureInfo bit position as an ASN.1 BIT STRING.
 func FailureInfoBitString(bit PKIFailureInfo) asn1.BitString {
 	bitLen := int(bit) + 1
@@ -266,22 +278,12 @@ func marshalSignerInfo(signer *Signer, signedAttrsDER, signature []byte) ([]byte
 		return nil, fmt.Errorf("marshal SID: %w", err)
 	}
 
-	sha256Alg := AlgorithmIdentifier{
-		Algorithm:  OIDSHA256,
-		Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
-	}
-
-	digestAlgDER, err := asn1.Marshal(sha256Alg)
+	digestAlgDER, err := asn1.Marshal(algSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("marshal digest algorithm: %w", err)
 	}
 
-	rsaSHA256Alg := AlgorithmIdentifier{
-		Algorithm:  OIDRSASHA256,
-		Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
-	}
-
-	sigAlgDER, err := asn1.Marshal(rsaSHA256Alg)
+	sigAlgDER, err := asn1.Marshal(algRSASHA256)
 	if err != nil {
 		return nil, fmt.Errorf("marshal signature algorithm: %w", err)
 	}
@@ -309,12 +311,7 @@ func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, include
 		return nil, fmt.Errorf("marshal version: %w", err)
 	}
 
-	sha256Alg := AlgorithmIdentifier{
-		Algorithm:  OIDSHA256,
-		Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
-	}
-
-	digestAlgDER, err := asn1.Marshal(sha256Alg)
+	digestAlgDER, err := asn1.Marshal(algSHA256)
 	if err != nil {
 		return nil, fmt.Errorf("marshal digest algorithm: %w", err)
 	}

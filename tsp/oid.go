@@ -21,16 +21,10 @@ var (
 	OIDSHA512 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 3}
 	// OIDDefaultPolicy is the default TSA policy OID.
 	OIDDefaultPolicy = asn1.ObjectIdentifier{1, 2, 3, 4, 1}
-	// OIDData is the OID for CMS data content type (1.2.840.113549.1.7.1).
-	OIDData = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 7, 1}
 	// OIDAttributeContentType is the OID for the content-type attribute.
 	OIDAttributeContentType = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	// OIDAttributeMessageDigest is the OID for the message-digest attribute.
 	OIDAttributeMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
-	// OIDAttributeSigningTime is the OID for the signing-time attribute.
-	OIDAttributeSigningTime = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 5}
-	// OIDRSAEncryption is the OID for RSA encryption.
-	OIDRSAEncryption = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 1}
 	// OIDRSASHA256 is the OID for sha256WithRSAEncryption.
 	OIDRSASHA256 = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
 )

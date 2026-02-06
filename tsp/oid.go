@@ -21,6 +21,12 @@ var (
 	OIDSHA512 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 3}
 	// OIDDefaultPolicy is the default TSA policy OID.
 	OIDDefaultPolicy = asn1.ObjectIdentifier{1, 2, 3, 4, 1}
+	// OIDAttributeContentType is the OID for the content-type attribute.
+	OIDAttributeContentType = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
+	// OIDAttributeMessageDigest is the OID for the message-digest attribute.
+	OIDAttributeMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
+	// OIDRSASHA256 is the OID for sha256WithRSAEncryption.
+	OIDRSASHA256 = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
 )
 
 //nolint:gochecknoglobals // lookup table for hash digest sizes

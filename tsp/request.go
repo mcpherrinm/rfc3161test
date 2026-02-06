@@ -79,7 +79,7 @@ func validateRequest(req *TimeStampReq) error {
 	if len(req.ReqPolicy) > 0 && !req.ReqPolicy.Equal(OIDDefaultPolicy) {
 		return &RequestError{FailureUnacceptedPolicy, "unsupported policy"}
 	}
-	for range req.Extensions {
+	if len(req.Extensions) > 0 {
 		return &RequestError{FailureUnacceptedExtension, "unsupported extension"}
 	}
 	return nil

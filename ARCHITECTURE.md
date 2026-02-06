@@ -24,8 +24,10 @@ rfc3161test/
 ├── cmd/
 │   ├── tsserver/
 │   │   └── main.go # Server entry point: flags, key loading, listen
-│   └── tsclient/
-│       └── main.go # Client CLI: build and POST a TimeStampReq, print result
+│   ├── tsclient/
+│   │   └── main.go # Client CLI: build and POST a TimeStampReq, print result
+│   └── tsakeygen/
+│       └── main.go # Key/cert generator: create RSA key + self-signed certificate
 ├── .github/
 │   └── workflows/
 │       └── ci.yml  # GitHub Actions: build, test, fuzz, lint
@@ -104,13 +106,23 @@ Error cases:
 - Wrong content type → 400.
 - Malformed DER → return `TimeStampResp` with `badDataFormat`.
 
-### 3. Entry Point — Server (`cmd/tsserver/`)
+### 3. Entry Point — Key Generator (`cmd/tsakeygen/`)
+
+Command-line tool that generates a TSA RSA private key and self-signed certificate:
+
+- Accept flags: output paths for key and certificate files, RSA key size in bits.
+- Generate an RSA private key.
+- Create a self-signed X.509 certificate with digital signature key usage, valid for one year.
+- Write the key as PEM-encoded `RSA PRIVATE KEY` (mode 0600) and the certificate as PEM-encoded `CERTIFICATE` (mode 0644).
+- Refuse to overwrite existing files (uses `O_EXCL`).
+
+### 4. Entry Point — Server (`cmd/tsserver/`)
 
 - Load TSA private key and certificate from PEM files (paths via flags).
 - Bind to configurable address (default `:3161`).
 - Start HTTP server.
 
-### 4. Entry Point — Client (`cmd/tsclient/`)
+### 5. Entry Point — Client (`cmd/tsclient/`)
 
 Command-line tool that builds and sends a `TimeStampReq`:
 

@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"crypto/sha256"
-	"encoding/asn1"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -18,8 +17,7 @@ func FuzzHandleHTTP(f *testing.F) {
 		Version: 1,
 		MessageImprint: tsp.MessageImprint{
 			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA256,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: tsp.OIDSHA256,
 			},
 			HashedMessage: hash[:],
 		},
@@ -29,7 +27,7 @@ func FuzzHandleHTTP(f *testing.F) {
 		Extensions: nil,
 	}
 
-	valid, err := asn1.Marshal(req)
+	valid, err := tsp.MarshalRequest(&req)
 	if err == nil {
 		f.Add(valid)
 	}

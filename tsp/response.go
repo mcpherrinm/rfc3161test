@@ -7,10 +7,10 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/asn1"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
-	"sync/atomic"
 	"time"
 )
 
@@ -126,7 +126,6 @@ type encapContentInfo struct {
 type Signer struct {
 	Key         *rsa.PrivateKey
 	Certificate *x509.Certificate
-	serial      atomic.Int64
 }
 
 // ErrTrailingData is returned when a TimeStampResp has trailing bytes.
@@ -174,13 +173,16 @@ func CreateErrorResponse(failure PKIFailureInfo) ([]byte, error) {
 
 // CreateResponse builds a granted TimeStampResp for the given request.
 func (signer *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
-	serial := signer.serial.Add(1)
+	serial, err := signer.generateSerial()
+	if err != nil {
+		return nil, err
+	}
 
 	tstInfo := TSTInfo{ //nolint:exhaustruct // optional fields left zero
 		Version:        1,
 		Policy:         OIDDefaultPolicy,
 		MessageImprint: req.MessageImprint,
-		SerialNumber:   big.NewInt(serial),
+		SerialNumber:   serial,
 		GenTime:        time.Now().UTC(),
 		Nonce:          req.Nonce,
 	}
@@ -221,6 +223,23 @@ func (signer *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
 	}
 
 	return der, nil
+}
+
+// generateSerial produces a 128-bit serial number. The upper 4 bytes encode the
+// number of seconds elapsed since the signing certificate's NotBefore, and the
+// lower 12 bytes are cryptographically random.
+func (signer *Signer) generateSerial() (*big.Int, error) {
+	elapsed := time.Since(signer.Certificate.NotBefore)
+	seconds := uint32(elapsed.Seconds())
+
+	var buf [16]byte
+	binary.BigEndian.PutUint32(buf[:4], seconds)
+
+	if _, err := rand.Read(buf[4:]); err != nil {
+		return nil, fmt.Errorf("generate serial random bytes: %w", err)
+	}
+
+	return new(big.Int).SetBytes(buf[:]), nil
 }
 
 func marshalContentInfo(contentType asn1.ObjectIdentifier, content []byte) ([]byte, error) {

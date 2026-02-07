@@ -25,6 +25,8 @@ var (
 	OIDDefaultPolicy = asn1.ObjectIdentifier{2, 23, 140, 1, 4, 2}
 	// OIDExtKeyUsageTimeStamping is the id-kp-timeStamping OID per RFC 5280.
 	OIDExtKeyUsageTimeStamping = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 8}
+	// OIDExtKeyUsage is the OID for the id-ce-extKeyUsage extension.
+	OIDExtKeyUsage = asn1.ObjectIdentifier{2, 5, 29, 37}
 	// OIDAttributeContentType is the OID for the content-type attribute.
 	OIDAttributeContentType = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	// OIDAttributeMessageDigest is the OID for the message-digest attribute.

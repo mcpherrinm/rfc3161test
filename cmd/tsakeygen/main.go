@@ -13,6 +13,8 @@ import (
 	"math/big"
 	"os"
 	"time"
+
+	"github.com/mcpherrinm/rfc3161test/tsp"
 )
 
 const (
@@ -54,7 +56,7 @@ func generate(keyPath, certPath string, bits int) error {
 
 	// Marshal id-kp-timeStamping EKU as a critical extension per CSBR §7.1.2.3(f).
 	ekuValue, err := asn1.Marshal([]asn1.ObjectIdentifier{
-		{1, 3, 6, 1, 5, 5, 7, 3, 8}, // id-kp-timeStamping
+		tsp.OIDExtKeyUsageTimeStamping,
 	})
 	if err != nil {
 		return fmt.Errorf("marshal EKU: %w", err)
@@ -69,7 +71,7 @@ func generate(keyPath, certPath string, bits int) error {
 		BasicConstraintsValid: true,
 		ExtraExtensions: []pkix.Extension{
 			{
-				Id:       asn1.ObjectIdentifier{2, 5, 29, 37}, // id-ce-extKeyUsage
+				Id:       tsp.OIDExtKeyUsage,
 				Critical: true,
 				Value:    ekuValue,
 			},

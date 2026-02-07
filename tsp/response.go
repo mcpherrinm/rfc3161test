@@ -134,7 +134,7 @@ func (signer *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
 		return nil, err
 	}
 
-	statusDER, err := marshalStatusInfo(StatusGranted, asn1.BitString{}) //nolint:exhaustruct // no FailInfo on success
+	statusDER, err := marshalPKIStatusInfo(StatusGranted, asn1.BitString{}) //nolint:exhaustruct // no FailInfo on success
 	if err != nil {
 		return nil, err
 	}
@@ -154,7 +154,7 @@ func (signer *Signer) CreateResponse(req *TimeStampReq) ([]byte, error) {
 	return der, nil
 }
 
-func marshalStatusInfo(status PKIStatus, failInfo asn1.BitString) ([]byte, error) {
+func marshalPKIStatusInfo(status PKIStatus, failInfo asn1.BitString) ([]byte, error) {
 	var b cryptobyte.Builder
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 		b.AddASN1Int64(int64(status))
@@ -308,7 +308,7 @@ func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, include
 		})
 
 		// encapContentInfo
-		marshalEncapContentInfoBuilder(b, tstInfoDER)
+		addEncapContentInfo(b, tstInfoDER)
 
 		// certificates [0] IMPLICIT (optional)
 		if includeCert {
@@ -331,7 +331,7 @@ func marshalSignedData(tstInfoDER, siDER []byte, cert *x509.Certificate, include
 	return der, nil
 }
 
-func marshalEncapContentInfoBuilder(b *cryptobyte.Builder, tstInfoDER []byte) {
+func addEncapContentInfo(b *cryptobyte.Builder, tstInfoDER []byte) {
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 		b.AddASN1ObjectIdentifier(OIDTSTInfo)
 		b.AddASN1(cbasn1.Tag(0).ContextSpecific().Constructed(), func(b *cryptobyte.Builder) {

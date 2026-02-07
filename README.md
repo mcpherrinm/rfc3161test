@@ -1,6 +1,8 @@
 # rfc3161test
 
-A reference implementation of an RFC 3161 Time-Stamp Authority (TSA) server in Go, using only the standard library.
+This is an experiment at building an RFC 3161 Time-Stamp Authority (TSA) server in Go.
+
+It is not trustworthy, and should not be used. Other than this human-written warning, it is written by AI.
 
 The server accepts DER-encoded `TimeStampReq` messages over HTTP and returns DER-encoded `TimeStampResp` messages, as specified in [RFC 3161](https://www.rfc-editor.org/rfc/rfc3161) §3.4.
 

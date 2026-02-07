@@ -235,7 +235,8 @@ func (signer *Signer) generateSerial() (*big.Int, error) {
 	var buf [16]byte
 	binary.BigEndian.PutUint32(buf[:4], seconds)
 
-	if _, err := rand.Read(buf[4:]); err != nil {
+	_, err := rand.Read(buf[4:])
+	if err != nil {
 		return nil, fmt.Errorf("generate serial random bytes: %w", err)
 	}
 

@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/binary"
 	"math/big"
 	"testing"
 	"time"
@@ -133,10 +134,14 @@ func TestCreateResponseSerial128Bit(t *testing.T) {
 	signer := testSigner(t)
 	req := validRequest(t)
 
+	before := time.Since(signer.Certificate.NotBefore)
+
 	respDER, err := signer.CreateResponse(&req)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	after := time.Since(signer.Certificate.NotBefore)
 
 	resp, err := ParseResponse(respDER)
 	if err != nil {
@@ -153,6 +158,16 @@ func TestCreateResponseSerial128Bit(t *testing.T) {
 
 	if len(serialBytes) < 13 {
 		t.Fatalf("serial number too small: %d bytes, want at least 13", len(serialBytes))
+	}
+
+	// Verify the upper 4 bytes encode seconds since NotBefore.
+	var padded [16]byte
+	copy(padded[16-len(serialBytes):], serialBytes)
+	seconds := binary.BigEndian.Uint32(padded[:4])
+
+	if seconds < uint32(before.Seconds())-1 || seconds > uint32(after.Seconds())+1 {
+		t.Fatalf("serial timestamp %d not in expected range [%d, %d]",
+			seconds, uint32(before.Seconds())-1, uint32(after.Seconds())+1)
 	}
 }
 

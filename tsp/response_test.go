@@ -1,6 +1,7 @@
 package tsp
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -305,6 +306,57 @@ func TestCreateResponseEContentType(t *testing.T) {
 	}
 }
 
+func TestCreateResponseSigningCertificateV2(t *testing.T) {
+	t.Parallel()
+
+	signer := testSigner(t)
+	req := validRequest(t)
+
+	respDER, err := signer.CreateResponse(&req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ParseResponse(respDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	parsedSD := extractSignedData(t, resp)
+	parsedSI := extractSignerInfo(t, parsedSD)
+
+	// Parse signed attributes to find SigningCertificateV2.
+	attrs := extractSignedAttrs(t, parsedSI)
+
+	found := false
+
+	for _, attr := range attrs {
+		if attr.Type.Equal(OIDSigningCertificateV2) {
+			found = true
+
+			var sigCertV2 signingCertificateV2
+
+			_, err := asn1.Unmarshal(attr.Values.Bytes, &sigCertV2)
+			if err != nil {
+				t.Fatalf("unmarshal SigningCertificateV2: %v", err)
+			}
+
+			if len(sigCertV2.Certs) != 1 {
+				t.Fatalf("expected 1 ESSCertIDv2, got %d", len(sigCertV2.Certs))
+			}
+
+			certHash := sha256.Sum256(signer.Certificate.Raw)
+			if !bytes.Equal(sigCertV2.Certs[0].CertHash, certHash[:]) {
+				t.Fatal("ESSCertIDv2 certHash does not match certificate")
+			}
+		}
+	}
+
+	if !found {
+		t.Fatal("SigningCertificateV2 attribute not found in signed attributes")
+	}
+}
+
 func TestCreateErrorResponse(t *testing.T) {
 	t.Parallel()
 
@@ -373,6 +425,29 @@ func extractSignerInfo(t *testing.T, parsed signedData) signerInfo {
 	}
 
 	return info
+}
+
+func extractSignedAttrs(t *testing.T, info signerInfo) []attribute {
+	t.Helper()
+
+	var attrs []attribute
+
+	rest := info.SignedAttrs.Bytes
+
+	for len(rest) > 0 {
+		var attr attribute
+
+		var err error
+
+		rest, err = asn1.Unmarshal(rest, &attr)
+		if err != nil {
+			t.Fatalf("unmarshal attribute: %v", err)
+		}
+
+		attrs = append(attrs, attr)
+	}
+
+	return attrs
 }
 
 func extractTSTInfo(t *testing.T, resp *TimeStampResp) TSTInfo {

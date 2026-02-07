@@ -16,6 +16,9 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
+
 	"github.com/mcpherrinm/rfc3161test/server"
 	"github.com/mcpherrinm/rfc3161test/tsp"
 )
@@ -80,7 +83,7 @@ func TestEndToEnd(t *testing.T) {
 		)
 	}
 
-	if !tsResp.TimeStampToken.ContentType.Equal(tsp.OIDSignedData) {
+	if tsResp.TimeStampToken == nil || !tsResp.TimeStampToken.ContentType.Equal(tsp.OIDSignedData) {
 		t.Fatal("token content type should be signedData")
 	}
 
@@ -94,8 +97,7 @@ func marshalE2EReq(t *testing.T, hash []byte, nonce *big.Int) []byte {
 		Version: 1,
 		MessageImprint: tsp.MessageImprint{
 			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  tsp.OIDSHA256,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: tsp.OIDSHA256,
 			},
 			HashedMessage: hash,
 		},
@@ -105,7 +107,7 @@ func marshalE2EReq(t *testing.T, hash []byte, nonce *big.Int) []byte {
 		Extensions: nil,
 	}
 
-	der, err := asn1.Marshal(req)
+	der, err := tsp.MarshalRequest(&req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,8 +160,45 @@ func verifyE2ETSTInfo(
 ) {
 	t.Helper()
 
-	parsedSD := unmarshalSignedData(t, tsResp)
-	tstInfo := unmarshalTSTInfo(t, parsedSD)
+	sdContent := cryptobyte.String(tsResp.TimeStampToken.Content)
+
+	var sdSeq cryptobyte.String
+	if !sdContent.ReadASN1(&sdSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read SignedData SEQUENCE")
+	}
+
+	// version
+	if !sdSeq.SkipASN1(cbasn1.INTEGER) {
+		t.Fatal("failed to skip version")
+	}
+
+	// digestAlgorithms SET
+	if !sdSeq.SkipASN1(cbasn1.SET) {
+		t.Fatal("failed to skip digestAlgorithms")
+	}
+
+	// encapContentInfo SEQUENCE
+	var eciSeq cryptobyte.String
+	if !sdSeq.ReadASN1(&eciSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read encapContentInfo")
+	}
+
+	var eContentType asn1.ObjectIdentifier
+	if !eciSeq.ReadASN1ObjectIdentifier(&eContentType) {
+		t.Fatal("failed to read eContentType")
+	}
+
+	var eContentExplicit cryptobyte.String
+	if !eciSeq.ReadASN1(&eContentExplicit, cbasn1.Tag(0).ContextSpecific().Constructed()) {
+		t.Fatal("failed to read eContent [0]")
+	}
+
+	var tstInfoDER []byte
+	if !eContentExplicit.ReadASN1Bytes(&tstInfoDER, cbasn1.OCTET_STRING) {
+		t.Fatal("failed to read eContent OCTET STRING")
+	}
+
+	tstInfo := parseTSTInfoDER(t, tstInfoDER)
 
 	if tstInfo.Nonce == nil || tstInfo.Nonce.Cmp(nonce) != 0 {
 		t.Fatalf("nonce = %v, want %v", tstInfo.Nonce, nonce)
@@ -177,59 +216,78 @@ func verifyE2ETSTInfo(
 		t.Fatal("messageImprint hash mismatch")
 	}
 
-	if len(parsedSD.Certificates.Bytes) == 0 {
+	// certificates [0] IMPLICIT (optional)
+	hasCerts := sdSeq.PeekASN1Tag(cbasn1.Tag(0).ContextSpecific().Constructed())
+	if !hasCerts {
 		t.Fatal("certificates should be present when certReq is true")
 	}
 }
 
-type e2eSignedData struct {
-	Version          int
-	DigestAlgorithms asn1.RawValue `asn1:"set"`
-	EncapContentInfo struct {
-		EContentType asn1.ObjectIdentifier
-		EContent     asn1.RawValue `asn1:"optional,explicit,tag:0"`
-	}
-	Certificates asn1.RawValue `asn1:"optional,tag:0"`
-	SignerInfos  asn1.RawValue `asn1:"set"`
-}
-
-func unmarshalSignedData(
-	t *testing.T, tsResp *tsp.TimeStampResp,
-) e2eSignedData {
+func parseTSTInfoDER(t *testing.T, der []byte) tsp.TSTInfo {
 	t.Helper()
 
-	var parsedSD e2eSignedData
+	input := cryptobyte.String(der)
 
-	_, err := asn1.Unmarshal(
-		tsResp.TimeStampToken.Content.Bytes,
-		&parsedSD,
-	)
-	if err != nil {
-		t.Fatalf("unmarshal SignedData: %v", err)
+	var seq cryptobyte.String
+	if !input.ReadASN1(&seq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read TSTInfo SEQUENCE")
 	}
 
-	return parsedSD
-}
+	var info tsp.TSTInfo
 
-func unmarshalTSTInfo(t *testing.T, parsedSD e2eSignedData) tsp.TSTInfo {
-	t.Helper()
-
-	var eContentOctet []byte
-
-	_, err := asn1.Unmarshal(
-		parsedSD.EncapContentInfo.EContent.Bytes,
-		&eContentOctet,
-	)
-	if err != nil {
-		t.Fatalf("unmarshal eContent: %v", err)
+	if !seq.ReadASN1Integer(&info.Version) {
+		t.Fatal("failed to read TSTInfo version")
 	}
 
-	var tstInfo tsp.TSTInfo
-
-	_, err = asn1.Unmarshal(eContentOctet, &tstInfo)
-	if err != nil {
-		t.Fatalf("unmarshal TSTInfo: %v", err)
+	if !seq.ReadASN1ObjectIdentifier(&info.Policy) {
+		t.Fatal("failed to read TSTInfo policy")
 	}
 
-	return tstInfo
+	// messageImprint SEQUENCE
+	var miSeq cryptobyte.String
+	if !seq.ReadASN1(&miSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read TSTInfo messageImprint")
+	}
+
+	var algSeq cryptobyte.String
+	if !miSeq.ReadASN1(&algSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read hashAlgorithm")
+	}
+
+	if !algSeq.ReadASN1ObjectIdentifier(&info.MessageImprint.HashAlgorithm.Algorithm) {
+		t.Fatal("failed to read algorithm OID")
+	}
+
+	if !miSeq.ReadASN1Bytes(&info.MessageImprint.HashedMessage, cbasn1.OCTET_STRING) {
+		t.Fatal("failed to read hashedMessage")
+	}
+
+	info.SerialNumber = new(big.Int)
+	if !seq.ReadASN1Integer(info.SerialNumber) {
+		t.Fatal("failed to read serialNumber")
+	}
+
+	if !seq.ReadASN1GeneralizedTime(&info.GenTime) {
+		t.Fatal("failed to read genTime")
+	}
+
+	// Optional: skip accuracy, ordering
+	seq.SkipOptionalASN1(cbasn1.SEQUENCE)
+
+	if seq.PeekASN1Tag(cbasn1.BOOLEAN) {
+		var ordering bool
+		if !seq.ReadASN1Boolean(&ordering) {
+			t.Fatal("failed to read ordering")
+		}
+	}
+
+	// nonce
+	if seq.PeekASN1Tag(cbasn1.INTEGER) {
+		info.Nonce = new(big.Int)
+		if !seq.ReadASN1Integer(info.Nonce) {
+			t.Fatal("failed to read nonce")
+		}
+	}
+
+	return info
 }

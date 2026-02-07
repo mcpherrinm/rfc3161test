@@ -6,13 +6,15 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/asn1"
 	"encoding/pem"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
 	"time"
+
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 
 	"github.com/mcpherrinm/rfc3161test/tsp"
 )
@@ -55,9 +57,7 @@ func generate(keyPath, certPath string, bits int) error {
 	now := time.Now()
 
 	// Marshal id-kp-timeStamping EKU as a critical extension per CSBR §7.1.2.3(f).
-	ekuValue, err := asn1.Marshal([]asn1.ObjectIdentifier{
-		tsp.OIDExtKeyUsageTimeStamping,
-	})
+	ekuValue, err := marshalEKU()
 	if err != nil {
 		return fmt.Errorf("marshal EKU: %w", err)
 	}
@@ -96,6 +96,20 @@ func generate(keyPath, certPath string, bits int) error {
 	fmt.Fprintf(os.Stderr, "wrote %s and %s\n", keyPath, certPath)
 
 	return nil
+}
+
+func marshalEKU() ([]byte, error) {
+	var b cryptobyte.Builder
+	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
+		b.AddASN1ObjectIdentifier(tsp.OIDExtKeyUsageTimeStamping)
+	})
+
+	der, err := b.Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("build EKU: %w", err)
+	}
+
+	return der, nil
 }
 
 func writeKey(path string, key *rsa.PrivateKey) error {

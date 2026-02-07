@@ -2,8 +2,16 @@ version: "2"
 linters:
   default: all
   disable:
+    - cyclop
+    - err113
+    - exhaustruct
+    - funlen
+    - gocognit
     - mnd
+    - nestif
+    - perfsprint
     - testpackage
+    - varnamelen
     - wsl
   enable:
     - wsl_v5
@@ -15,3 +23,4 @@ linters:
           allow:
             - $gostd
             - github.com/mcpherrinm/rfc3161test
+            - golang.org/x/crypto

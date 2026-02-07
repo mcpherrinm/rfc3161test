@@ -13,6 +13,9 @@ import (
 	"math/big"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/cryptobyte"
+	cbasn1 "golang.org/x/crypto/cryptobyte/asn1"
 )
 
 func TestFailureInfoBitString(t *testing.T) {
@@ -96,6 +99,10 @@ func TestCreateResponseGranted(t *testing.T) {
 
 	if resp.Status.Status != StatusGranted {
 		t.Fatalf("status = %d, want %d", resp.Status.Status, StatusGranted)
+	}
+
+	if resp.TimeStampToken == nil {
+		t.Fatal("token should be present")
 	}
 
 	if !resp.TimeStampToken.ContentType.Equal(OIDSignedData) {
@@ -222,8 +229,8 @@ func TestCreateResponseCertReqTrue(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSD := extractSignedData(t, resp)
-	if len(parsedSD.Certificates.Bytes) == 0 {
+	hasCerts := extractHasCertificates(t, resp)
+	if !hasCerts {
 		t.Fatal("certificates should be present when certReq is true")
 	}
 }
@@ -245,8 +252,8 @@ func TestCreateResponseCertReqFalse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSD := extractSignedData(t, resp)
-	if len(parsedSD.Certificates.Bytes) != 0 {
+	hasCerts := extractHasCertificates(t, resp)
+	if hasCerts {
 		t.Fatal("certificates should be absent when certReq is false")
 	}
 }
@@ -311,18 +318,16 @@ func TestCreateResponseSignatureVerifies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSD := extractSignedData(t, resp)
-	parsedSI := extractSignerInfo(t, parsedSD)
+	signedAttrsDER, signature := extractSignerInfoParts(t, resp)
 
 	// Rebuild signed attributes with SET tag for verification.
-	attrBytes := parsedSI.SignedAttrs.FullBytes
-	setBuf := make([]byte, len(attrBytes))
-	copy(setBuf, attrBytes)
+	setBuf := make([]byte, len(signedAttrsDER))
+	copy(setBuf, signedAttrsDER)
 	setBuf[0] = 0x31
 
 	digest := sha256.Sum256(setBuf)
 
-	err = rsa.VerifyPKCS1v15(&signer.Key.PublicKey, crypto.SHA256, digest[:], parsedSI.Signature)
+	err = rsa.VerifyPKCS1v15(&signer.Key.PublicKey, crypto.SHA256, digest[:], signature)
 	if err != nil {
 		t.Fatalf("signature verification failed: %v", err)
 	}
@@ -344,8 +349,8 @@ func TestCreateResponseEContentType(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSD := extractSignedData(t, resp)
-	if !parsedSD.EncapContentInfo.EContentType.Equal(OIDTSTInfo) {
+	eContentType := extractEContentType(t, resp)
+	if !eContentType.Equal(OIDTSTInfo) {
 		t.Fatal("eContentType should be id-ct-TSTInfo")
 	}
 }
@@ -366,31 +371,59 @@ func TestCreateResponseSigningCertificateV2(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	parsedSD := extractSignedData(t, resp)
-	parsedSI := extractSignerInfo(t, parsedSD)
+	signedAttrsDER, _ := extractSignerInfoParts(t, resp)
 
-	// Parse signed attributes to find SigningCertificateV2.
-	attrs := extractSignedAttrs(t, parsedSI)
-
+	// Parse signed attributes to find SigningCertificateV2
 	found := false
+	input := cryptobyte.String(signedAttrsDER)
 
-	for _, attr := range attrs {
-		if attr.Type.Equal(OIDSigningCertificateV2) {
+	// The signedAttrs is tagged [0] IMPLICIT - read inner elements
+	var attrsContent cryptobyte.String
+	if !input.ReadASN1(&attrsContent, cbasn1.Tag(0).ContextSpecific().Constructed()) {
+		// Try as raw SET
+		input = cryptobyte.String(signedAttrsDER)
+		attrsContent = input
+	}
+
+	for !attrsContent.Empty() {
+		var attrSeq cryptobyte.String
+		if !attrsContent.ReadASN1(&attrSeq, cbasn1.SEQUENCE) {
+			t.Fatal("failed to read attribute SEQUENCE")
+		}
+
+		var attrOID asn1.ObjectIdentifier
+		if !attrSeq.ReadASN1ObjectIdentifier(&attrOID) {
+			t.Fatal("failed to read attribute OID")
+		}
+
+		if attrOID.Equal(OIDSigningCertificateV2) {
 			found = true
 
-			var sigCertV2 signingCertificateV2
-
-			_, err := asn1.Unmarshal(attr.Values.Bytes, &sigCertV2)
-			if err != nil {
-				t.Fatalf("unmarshal SigningCertificateV2: %v", err)
+			var setContent cryptobyte.String
+			if !attrSeq.ReadASN1(&setContent, cbasn1.SET) {
+				t.Fatal("failed to read attribute SET")
 			}
 
-			if len(sigCertV2.Certs) != 1 {
-				t.Fatalf("expected 1 ESSCertIDv2, got %d", len(sigCertV2.Certs))
+			// Parse SigningCertificateV2
+			var scv2Seq cryptobyte.String
+			if !setContent.ReadASN1(&scv2Seq, cbasn1.SEQUENCE) {
+				t.Fatal("failed to read SigningCertificateV2 SEQUENCE")
 			}
 
-			certHash := sha256.Sum256(signer.Certificate.Raw)
-			if !bytes.Equal(sigCertV2.Certs[0].CertHash, certHash[:]) {
+			// Parse ESSCertIDv2
+			var certIDSeq cryptobyte.String
+			if !scv2Seq.ReadASN1(&certIDSeq, cbasn1.SEQUENCE) {
+				t.Fatal("failed to read ESSCertIDv2 SEQUENCE")
+			}
+
+			// certHash OCTET STRING
+			var certHash []byte
+			if !certIDSeq.ReadASN1Bytes(&certHash, cbasn1.OCTET_STRING) {
+				t.Fatal("failed to read certHash")
+			}
+
+			expectedHash := sha256.Sum256(signer.Certificate.Raw)
+			if !bytes.Equal(certHash, expectedHash[:]) {
 				t.Fatal("ESSCertIDv2 certHash does not match certificate")
 			}
 		}
@@ -470,73 +503,268 @@ func TestCreateErrorResponseBadDataFormat(t *testing.T) {
 	}
 }
 
-func extractSignedData(t *testing.T, resp *TimeStampResp) signedData {
+// extractSignedDataContent returns the raw bytes inside the SignedData content.
+func extractSignedDataContent(t *testing.T, resp *TimeStampResp) cryptobyte.String {
 	t.Helper()
 
-	var parsed signedData
-
-	_, err := asn1.Unmarshal(resp.TimeStampToken.Content.Bytes, &parsed)
-	if err != nil {
-		t.Fatalf("unmarshal SignedData: %v", err)
-	}
-
-	return parsed
+	return cryptobyte.String(resp.TimeStampToken.Content)
 }
 
-func extractSignerInfo(t *testing.T, parsed signedData) signerInfo {
+// extractHasCertificates checks if the SignedData contains certificates.
+func extractHasCertificates(t *testing.T, resp *TimeStampResp) bool {
 	t.Helper()
 
-	var info signerInfo
+	sdContent := extractSignedDataContent(t, resp)
 
-	_, err := asn1.Unmarshal(parsed.SignerInfos.Bytes, &info)
-	if err != nil {
-		t.Fatalf("unmarshal SignerInfo: %v", err)
+	var sdSeq cryptobyte.String
+	if !sdContent.ReadASN1(&sdSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read SignedData SEQUENCE")
 	}
 
-	return info
+	// version
+	var version int
+	if !sdSeq.ReadASN1Integer(&version) {
+		t.Fatal("failed to read version")
+	}
+
+	// digestAlgorithms SET
+	if !sdSeq.SkipASN1(cbasn1.SET) {
+		t.Fatal("failed to skip digestAlgorithms")
+	}
+
+	// encapContentInfo SEQUENCE
+	if !sdSeq.SkipASN1(cbasn1.SEQUENCE) {
+		t.Fatal("failed to skip encapContentInfo")
+	}
+
+	// certificates [0] IMPLICIT (optional)
+	return sdSeq.PeekASN1Tag(cbasn1.Tag(0).ContextSpecific().Constructed())
 }
 
-func extractSignedAttrs(t *testing.T, info signerInfo) []attribute {
+// extractSignerInfoParts returns the raw signed attributes DER and signature.
+func extractSignerInfoParts(t *testing.T, resp *TimeStampResp) ([]byte, []byte) {
 	t.Helper()
 
-	var attrs []attribute
+	sdContent := extractSignedDataContent(t, resp)
 
-	rest := info.SignedAttrs.Bytes
-
-	for len(rest) > 0 {
-		var attr attribute
-
-		var err error
-
-		rest, err = asn1.Unmarshal(rest, &attr)
-		if err != nil {
-			t.Fatalf("unmarshal attribute: %v", err)
-		}
-
-		attrs = append(attrs, attr)
+	var sdSeq cryptobyte.String
+	if !sdContent.ReadASN1(&sdSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read SignedData SEQUENCE")
 	}
 
-	return attrs
+	// version
+	if !sdSeq.SkipASN1(cbasn1.INTEGER) {
+		t.Fatal("failed to skip version")
+	}
+
+	// digestAlgorithms SET
+	if !sdSeq.SkipASN1(cbasn1.SET) {
+		t.Fatal("failed to skip digestAlgorithms")
+	}
+
+	// encapContentInfo SEQUENCE
+	if !sdSeq.SkipASN1(cbasn1.SEQUENCE) {
+		t.Fatal("failed to skip encapContentInfo")
+	}
+
+	// certificates [0] IMPLICIT (optional)
+	sdSeq.SkipOptionalASN1(cbasn1.Tag(0).ContextSpecific().Constructed())
+
+	// signerInfos SET
+	var siSet cryptobyte.String
+	if !sdSeq.ReadASN1(&siSet, cbasn1.SET) {
+		t.Fatal("failed to read signerInfos SET")
+	}
+
+	// SignerInfo SEQUENCE
+	var siSeq cryptobyte.String
+	if !siSet.ReadASN1(&siSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read SignerInfo SEQUENCE")
+	}
+
+	// version
+	if !siSeq.SkipASN1(cbasn1.INTEGER) {
+		t.Fatal("failed to skip SI version")
+	}
+
+	// SID SEQUENCE
+	if !siSeq.SkipASN1(cbasn1.SEQUENCE) {
+		t.Fatal("failed to skip SID")
+	}
+
+	// digestAlgorithm SEQUENCE
+	if !siSeq.SkipASN1(cbasn1.SEQUENCE) {
+		t.Fatal("failed to skip digestAlgorithm")
+	}
+
+	// signedAttrs [0] IMPLICIT - read as element (with tag)
+	var rawAttrs cryptobyte.String
+	if !siSeq.ReadASN1Element(&rawAttrs, cbasn1.Tag(0).ContextSpecific().Constructed()) {
+		t.Fatal("failed to read signedAttrs element")
+	}
+
+	// signatureAlgorithm SEQUENCE
+	if !siSeq.SkipASN1(cbasn1.SEQUENCE) {
+		t.Fatal("failed to skip signatureAlgorithm")
+	}
+
+	// signature OCTET STRING
+	var sig []byte
+	if !siSeq.ReadASN1Bytes(&sig, cbasn1.OCTET_STRING) {
+		t.Fatal("failed to read signature")
+	}
+
+	return []byte(rawAttrs), sig
+}
+
+// extractEContentType returns the eContentType OID from the SignedData.
+func extractEContentType(t *testing.T, resp *TimeStampResp) asn1.ObjectIdentifier {
+	t.Helper()
+
+	sdContent := extractSignedDataContent(t, resp)
+
+	var sdSeq cryptobyte.String
+	if !sdContent.ReadASN1(&sdSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read SignedData SEQUENCE")
+	}
+
+	// version
+	if !sdSeq.SkipASN1(cbasn1.INTEGER) {
+		t.Fatal("failed to skip version")
+	}
+
+	// digestAlgorithms SET
+	if !sdSeq.SkipASN1(cbasn1.SET) {
+		t.Fatal("failed to skip digestAlgorithms")
+	}
+
+	// encapContentInfo SEQUENCE
+	var eciSeq cryptobyte.String
+	if !sdSeq.ReadASN1(&eciSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read encapContentInfo")
+	}
+
+	var eContentType asn1.ObjectIdentifier
+	if !eciSeq.ReadASN1ObjectIdentifier(&eContentType) {
+		t.Fatal("failed to read eContentType")
+	}
+
+	return eContentType
 }
 
 func extractTSTInfo(t *testing.T, resp *TimeStampResp) TSTInfo {
 	t.Helper()
 
-	parsedSD := extractSignedData(t, resp)
+	sdContent := extractSignedDataContent(t, resp)
 
-	var eContentOctet []byte
-
-	_, err := asn1.Unmarshal(parsedSD.EncapContentInfo.EContent.Bytes, &eContentOctet)
-	if err != nil {
-		t.Fatalf("unmarshal eContent OCTET STRING: %v", err)
+	var sdSeq cryptobyte.String
+	if !sdContent.ReadASN1(&sdSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read SignedData SEQUENCE")
 	}
 
-	var tstInfo TSTInfo
-
-	_, err = asn1.Unmarshal(eContentOctet, &tstInfo)
-	if err != nil {
-		t.Fatalf("unmarshal TSTInfo: %v", err)
+	// version
+	if !sdSeq.SkipASN1(cbasn1.INTEGER) {
+		t.Fatal("failed to skip version")
 	}
 
-	return tstInfo
+	// digestAlgorithms SET
+	if !sdSeq.SkipASN1(cbasn1.SET) {
+		t.Fatal("failed to skip digestAlgorithms")
+	}
+
+	// encapContentInfo SEQUENCE
+	var eciSeq cryptobyte.String
+	if !sdSeq.ReadASN1(&eciSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read encapContentInfo")
+	}
+
+	// eContentType OID
+	if !eciSeq.SkipASN1(cbasn1.OBJECT_IDENTIFIER) {
+		t.Fatal("failed to skip eContentType")
+	}
+
+	// eContent [0] EXPLICIT
+	var eContentExplicit cryptobyte.String
+	if !eciSeq.ReadASN1(&eContentExplicit, cbasn1.Tag(0).ContextSpecific().Constructed()) {
+		t.Fatal("failed to read eContent [0]")
+	}
+
+	// OCTET STRING
+	var tstInfoDER []byte
+	if !eContentExplicit.ReadASN1Bytes(&tstInfoDER, cbasn1.OCTET_STRING) {
+		t.Fatal("failed to read eContent OCTET STRING")
+	}
+
+	return parseTSTInfoDER(t, tstInfoDER)
+}
+
+func parseTSTInfoDER(t *testing.T, der []byte) TSTInfo {
+	t.Helper()
+
+	input := cryptobyte.String(der)
+
+	var seq cryptobyte.String
+	if !input.ReadASN1(&seq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read TSTInfo SEQUENCE")
+	}
+
+	var info TSTInfo
+
+	if !seq.ReadASN1Integer(&info.Version) {
+		t.Fatal("failed to read TSTInfo version")
+	}
+
+	if !seq.ReadASN1ObjectIdentifier(&info.Policy) {
+		t.Fatal("failed to read TSTInfo policy")
+	}
+
+	// messageImprint SEQUENCE
+	var miSeq cryptobyte.String
+	if !seq.ReadASN1(&miSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read TSTInfo messageImprint")
+	}
+
+	var algSeq cryptobyte.String
+	if !miSeq.ReadASN1(&algSeq, cbasn1.SEQUENCE) {
+		t.Fatal("failed to read hashAlgorithm")
+	}
+
+	if !algSeq.ReadASN1ObjectIdentifier(&info.MessageImprint.HashAlgorithm.Algorithm) {
+		t.Fatal("failed to read algorithm OID")
+	}
+
+	if !miSeq.ReadASN1Bytes(&info.MessageImprint.HashedMessage, cbasn1.OCTET_STRING) {
+		t.Fatal("failed to read hashedMessage")
+	}
+
+	info.SerialNumber = new(big.Int)
+	if !seq.ReadASN1Integer(info.SerialNumber) {
+		t.Fatal("failed to read serialNumber")
+	}
+
+	if !seq.ReadASN1GeneralizedTime(&info.GenTime) {
+		t.Fatal("failed to read genTime")
+	}
+
+	// Optional fields: accuracy, ordering, nonce, tsa, extensions
+	// Skip accuracy if present (SEQUENCE)
+	seq.SkipOptionalASN1(cbasn1.SEQUENCE)
+
+	// Skip ordering if present (BOOLEAN)
+	if seq.PeekASN1Tag(cbasn1.BOOLEAN) {
+		var ordering bool
+		if !seq.ReadASN1Boolean(&ordering) {
+			t.Fatal("failed to read ordering")
+		}
+	}
+
+	// nonce (optional INTEGER)
+	if seq.PeekASN1Tag(cbasn1.INTEGER) {
+		info.Nonce = new(big.Int)
+		if !seq.ReadASN1Integer(info.Nonce) {
+			t.Fatal("failed to read nonce")
+		}
+	}
+
+	return info
 }

@@ -12,7 +12,7 @@ import (
 func mustMarshalRequest(t *testing.T, req TimeStampReq) []byte {
 	t.Helper()
 
-	der, err := asn1.Marshal(req)
+	der, err := MarshalRequest(&req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,8 +29,7 @@ func validRequest(t *testing.T) TimeStampReq {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  OIDSHA256,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: OIDSHA256,
 			},
 			HashedMessage: hash[:],
 		},
@@ -123,8 +122,7 @@ func TestParseRequestSHA384(t *testing.T) {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  OIDSHA384,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: OIDSHA384,
 			},
 			HashedMessage: hash[:],
 		},
@@ -150,8 +148,7 @@ func TestParseRequestSHA512(t *testing.T) {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  OIDSHA512,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: OIDSHA512,
 			},
 			HashedMessage: hash[:],
 		},
@@ -200,8 +197,7 @@ func TestParseRequestBadAlg(t *testing.T) {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  asn1.ObjectIdentifier{1, 2, 3, 4, 5},
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: asn1.ObjectIdentifier{1, 2, 3, 4, 5},
 			},
 			HashedMessage: hash[:],
 		},
@@ -235,8 +231,7 @@ func TestParseRequestHashLengthMismatch(t *testing.T) {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  OIDSHA256,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: OIDSHA256,
 			},
 			HashedMessage: []byte("short"),
 		},
@@ -351,8 +346,7 @@ func TestParseRequestSHA1Rejected(t *testing.T) {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  OIDSHA1,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: OIDSHA1,
 			},
 			HashedMessage: make([]byte, 20), // SHA-1 produces 20 bytes
 		},

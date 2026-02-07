@@ -114,8 +114,7 @@ func buildRequest(
 		Version: 1,
 		MessageImprint: tsp.MessageImprint{
 			HashAlgorithm: tsp.AlgorithmIdentifier{
-				Algorithm:  oid,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: oid,
 			},
 			HashedMessage: digest,
 		},
@@ -125,7 +124,7 @@ func buildRequest(
 		Extensions: nil,
 	}
 
-	der, err := asn1.Marshal(req)
+	der, err := tsp.MarshalRequest(&req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("marshal request: %w", err)
 	}
@@ -185,9 +184,9 @@ func printResponse(
 		return err //nolint:wrapcheck // pass-through write error
 	}
 
-	if !resp.TimeStampToken.ContentType.Equal(tsp.OIDSignedData) {
+	if resp.TimeStampToken == nil || !resp.TimeStampToken.ContentType.Equal(tsp.OIDSignedData) {
 		return fmt.Errorf(
-			"%w: %v", errUnexpectedContent, resp.TimeStampToken.ContentType,
+			"%w", errUnexpectedContent,
 		)
 	}
 

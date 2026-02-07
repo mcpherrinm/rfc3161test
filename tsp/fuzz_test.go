@@ -2,7 +2,6 @@ package tsp
 
 import (
 	"crypto/sha256"
-	"encoding/asn1"
 	"testing"
 )
 
@@ -12,8 +11,7 @@ func FuzzParseRequest(f *testing.F) {
 		Version: 1,
 		MessageImprint: MessageImprint{
 			HashAlgorithm: AlgorithmIdentifier{
-				Algorithm:  OIDSHA256,
-				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+				Algorithm: OIDSHA256,
 			},
 			HashedMessage: hash[:],
 		},
@@ -23,7 +21,7 @@ func FuzzParseRequest(f *testing.F) {
 		Extensions: nil,
 	}
 
-	valid, err := asn1.Marshal(req)
+	valid, err := MarshalRequest(&req)
 	if err == nil {
 		f.Add(valid)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 )
@@ -76,16 +77,7 @@ func TestGenerateTimestampEKU(t *testing.T) {
 	cert := loadTestCert(t, certPath)
 
 	// CSBR §7.1.2.3(f) requires id-kp-timeStamping EKU marked critical.
-	found := false
-	for _, eku := range cert.ExtKeyUsage {
-		if eku == x509.ExtKeyUsageTimeStamping {
-			found = true
-
-			break
-		}
-	}
-
-	if !found {
+	if !slices.Contains(cert.ExtKeyUsage, x509.ExtKeyUsageTimeStamping) {
 		t.Fatal("certificate should have id-kp-timeStamping EKU per CSBR §7.1.2.3(f)")
 	}
 }

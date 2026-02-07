@@ -1,6 +1,7 @@
 package tsp
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -345,7 +346,7 @@ func TestCreateResponseSigningCertificateV2(t *testing.T) {
 			}
 
 			certHash := sha256.Sum256(signer.Certificate.Raw)
-			if string(sigCertV2.Certs[0].CertHash) != string(certHash[:]) {
+			if !bytes.Equal(sigCertV2.Certs[0].CertHash, certHash[:]) {
 				t.Fatal("ESSCertIDv2 certHash does not match certificate")
 			}
 		}

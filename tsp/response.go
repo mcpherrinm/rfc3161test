@@ -73,6 +73,24 @@ type issuerAndSerialNumber struct {
 	SerialNumber *big.Int
 }
 
+// essCertIDv2 identifies a certificate using a hash, per RFC 5035 / RFC 5816.
+type essCertIDv2 struct {
+	HashAlgorithm AlgorithmIdentifier `asn1:"optional"`
+	CertHash      []byte
+	IssuerSerial  issuerSerial `asn1:"optional"`
+}
+
+// issuerSerial identifies a certificate by GeneralNames issuer and serial number, per RFC 5035.
+type issuerSerial struct {
+	Issuer       asn1.RawValue
+	SerialNumber *big.Int
+}
+
+// signingCertificateV2 is the SigningCertificateV2 attribute value, per RFC 5035 / RFC 5816.
+type signingCertificateV2 struct {
+	Certs []essCertIDv2
+}
+
 // attribute represents a CMS attribute (SET OF values keyed by OID).
 type attribute struct {
 	Type   asn1.ObjectIdentifier
@@ -239,7 +257,7 @@ func marshalContentInfo(contentType asn1.ObjectIdentifier, content []byte) ([]by
 func (signer *Signer) signCMS(tstInfoDER []byte, includeCert bool) ([]byte, error) {
 	digest := sha256.Sum256(tstInfoDER)
 
-	signedAttrsDER, err := buildSignedAttrsDER(digest[:])
+	signedAttrsDER, err := buildSignedAttrsDER(digest[:], signer.Certificate)
 	if err != nil {
 		return nil, err
 	}
@@ -392,7 +410,7 @@ func marshalEncapContentInfo(tstInfoDER []byte) ([]byte, error) {
 	return der, nil
 }
 
-func buildSignedAttrsDER(digest []byte) ([]byte, error) {
+func buildSignedAttrsDER(digest []byte, cert *x509.Certificate) ([]byte, error) {
 	contentTypeAttr, err := marshalAttr(OIDAttributeContentType, OIDTSTInfo)
 	if err != nil {
 		return nil, err
@@ -409,7 +427,12 @@ func buildSignedAttrsDER(digest []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	combined := concat(contentTypeAttr, digestAttr)
+	sigCertV2Attr, err := buildSigningCertificateV2Attr(cert)
+	if err != nil {
+		return nil, err
+	}
+
+	combined := concat(contentTypeAttr, digestAttr, sigCertV2Attr)
 
 	der, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER IMPLICIT [0]
 		Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: combined,
@@ -419,6 +442,43 @@ func buildSignedAttrsDER(digest []byte) ([]byte, error) {
 	}
 
 	return der, nil
+}
+
+// buildSigningCertificateV2Attr builds the SigningCertificateV2 signed attribute per RFC 5816.
+func buildSigningCertificateV2Attr(cert *x509.Certificate) ([]byte, error) {
+	certHash := sha256.Sum256(cert.Raw)
+
+	// Build GeneralNames SEQUENCE containing a single directoryName [4] for the issuer.
+	issuerName, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER context tag
+		Class:      asn1.ClassContextSpecific,
+		Tag:        4,
+		IsCompound: true,
+		Bytes:      cert.RawIssuer,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal issuer general name: %w", err)
+	}
+
+	generalNames, err := asn1.Marshal(asn1.RawValue{ //nolint:exhaustruct // manual DER SEQUENCE
+		Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true, Bytes: issuerName,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal general names: %w", err)
+	}
+
+	certID := essCertIDv2{ //nolint:exhaustruct // HashAlgorithm omitted; default is SHA-256
+		CertHash: certHash[:],
+		IssuerSerial: issuerSerial{
+			Issuer:       asn1.RawValue{FullBytes: generalNames}, //nolint:exhaustruct // raw DER
+			SerialNumber: cert.SerialNumber,
+		},
+	}
+
+	sigCertV2 := signingCertificateV2{
+		Certs: []essCertIDv2{certID},
+	}
+
+	return marshalAttr(OIDSigningCertificateV2, sigCertV2)
 }
 
 func marshalAttr(oid asn1.ObjectIdentifier, value any) ([]byte, error) {

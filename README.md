@@ -4,6 +4,8 @@ A reference implementation of an RFC 3161 Time-Stamp Authority (TSA) server in G
 
 The server accepts DER-encoded `TimeStampReq` messages over HTTP and returns DER-encoded `TimeStampResp` messages, as specified in [RFC 3161](https://www.rfc-editor.org/rfc/rfc3161) §3.4.
 
+The implementation includes [RFC 5816](https://www.rfc-editor.org/rfc/rfc5816) support: the `SigningCertificateV2` attribute with `ESSCertIDv2` is included in the CMS `SignedData` signed attributes, identifying the TSA certificate using SHA-256.
+
 ## Building
 
 ```bash

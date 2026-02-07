@@ -2,7 +2,7 @@
 
 ## Overview
 
-An HTTP-based Time-Stamp Authority (TSA) server implementing RFC 3161 (Internet X.509 PKI Time-Stamp Protocol) in Go, using only the standard library. The server accepts DER-encoded `TimeStampReq` messages over HTTP and returns DER-encoded `TimeStampResp` messages, as specified in RFC 3161 §3.4.
+An HTTP-based Time-Stamp Authority (TSA) server implementing RFC 3161 (Internet X.509 PKI Time-Stamp Protocol) with RFC 5816 (ESSCertIDv2) support in Go, using only the standard library. The server accepts DER-encoded `TimeStampReq` messages over HTTP and returns DER-encoded `TimeStampResp` messages, as specified in RFC 3161 §3.4.
 
 ## Constraints
 
@@ -33,6 +33,7 @@ rfc3161test/
 │       └── ci.yml  # GitHub Actions: build, test, fuzz, lint
 ├── go.mod
 ├── rfc3161.txt     # Reference specification
+├── rfc5816.txt     # ESSCertIDv2 update specification
 └── ARCHITECTURE.md # This file
 ```
 
@@ -72,7 +73,7 @@ TimeStampResp ::= SEQUENCE {
 On success (`status = granted`):
 1. Construct `TSTInfo` with server policy OID, echoed `messageImprint`, monotonic `serialNumber`, `genTime` (current UTC), and echoed `nonce` if present.
 2. DER-encode `TSTInfo`.
-3. Wrap in CMS `SignedData` (`eContentType = id-ct-TSTInfo`), sign with the TSA's RSA private key.
+3. Wrap in CMS `SignedData` (`eContentType = id-ct-TSTInfo`), sign with the TSA's RSA private key. Signed attributes include `SigningCertificateV2` with `ESSCertIDv2` per RFC 5816.
 4. Wrap `SignedData` in `ContentInfo`.
 5. If `certReq` is true, include the TSA certificate in `SignedData.certificates`.
 
@@ -88,6 +89,7 @@ On failure, return `PKIStatusInfo` with appropriate `PKIFailureInfo` bit and no 
 | SHA-384 | 2.16.840.1.101.3.4.2.2 |
 | SHA-512 | 2.16.840.1.101.3.4.2.3 |
 | TSA policy | 1.2.3.4.1 (configurable) |
+| id-aa-signingCertificateV2 | 1.2.840.113549.1.9.16.2.47 |
 
 ### 2. HTTP Server (`server/`)
 
@@ -145,7 +147,7 @@ An atomic `int64` counter, starting from 1, incremented per token issued. Per RF
 | Request parsing | Valid v1 request; wrong version; unknown hash OID → `badAlg`; hash length mismatch → `badDataFormat`; unrecognized extension → `unacceptedExtension`; wrong policy → `unacceptedPolicy` |
 | Response building | Granted response round-trip; nonce echo; serial number increments; `certReq` true includes cert; `certReq` false omits cert |
 | TSTInfo fields | `genTime` format correctness; policy matches; messageImprint echoed |
-| CMS/SignedData | Signature verifies with TSA public key; `eContentType` is `id-ct-TSTInfo` |
+| CMS/SignedData | Signature verifies with TSA public key; `eContentType` is `id-ct-TSTInfo`; `SigningCertificateV2` attribute present with correct `ESSCertIDv2` |
 | PKIFailureInfo | Correct bit positions for each failure code |
 
 ### Integration Tests (`server/handler_test.go`)

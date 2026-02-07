@@ -27,6 +27,8 @@ var (
 	OIDAttributeMessageDigest = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 4}
 	// OIDRSASHA256 is the OID for sha256WithRSAEncryption.
 	OIDRSASHA256 = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 11}
+	// OIDSigningCertificateV2 is the OID for id-aa-signingCertificateV2 (RFC 5816 / RFC 5035).
+	OIDSigningCertificateV2 = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 16, 2, 47}
 )
 
 //nolint:gochecknoglobals // lookup table for hash digest sizes

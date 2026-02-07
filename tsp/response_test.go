@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
+	"encoding/binary"
 	"math/big"
 	"testing"
 	"time"
@@ -74,7 +75,7 @@ func testSigner(t *testing.T) *Signer {
 		t.Fatal(err)
 	}
 
-	return &Signer{Key: key, Certificate: cert} //nolint:exhaustruct // serial starts at zero
+	return &Signer{Key: key, Certificate: cert}
 }
 
 func TestCreateResponseGranted(t *testing.T) {
@@ -127,7 +128,50 @@ func TestCreateResponseNonceEcho(t *testing.T) {
 	}
 }
 
-func TestCreateResponseSerialIncrements(t *testing.T) {
+func TestCreateResponseSerial128Bit(t *testing.T) {
+	t.Parallel()
+
+	signer := testSigner(t)
+	req := validRequest(t)
+
+	before := time.Since(signer.Certificate.NotBefore)
+
+	respDER, err := signer.CreateResponse(&req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	after := time.Since(signer.Certificate.NotBefore)
+
+	resp, err := ParseResponse(respDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tstInfo := extractTSTInfo(t, resp)
+
+	// Serial should be at most 16 bytes (128 bits).
+	serialBytes := tstInfo.SerialNumber.Bytes()
+	if len(serialBytes) > 16 {
+		t.Fatalf("serial number too large: %d bytes, want at most 16", len(serialBytes))
+	}
+
+	if len(serialBytes) < 13 {
+		t.Fatalf("serial number too small: %d bytes, want at least 13", len(serialBytes))
+	}
+
+	// Verify the upper 4 bytes encode seconds since NotBefore.
+	var padded [16]byte
+	copy(padded[16-len(serialBytes):], serialBytes)
+	seconds := binary.BigEndian.Uint32(padded[:4])
+
+	if seconds < uint32(before.Seconds())-1 || seconds > uint32(after.Seconds())+1 {
+		t.Fatalf("serial timestamp %d not in expected range [%d, %d]",
+			seconds, uint32(before.Seconds())-1, uint32(after.Seconds())+1)
+	}
+}
+
+func TestCreateResponseSerialUnique(t *testing.T) {
 	t.Parallel()
 
 	signer := testSigner(t)
@@ -156,8 +200,8 @@ func TestCreateResponseSerialIncrements(t *testing.T) {
 	tst1 := extractTSTInfo(t, resp1)
 	tst2 := extractTSTInfo(t, resp2)
 
-	if tst1.SerialNumber.Cmp(tst2.SerialNumber) >= 0 {
-		t.Fatalf("serial %v should be less than %v", tst1.SerialNumber, tst2.SerialNumber)
+	if tst1.SerialNumber.Cmp(tst2.SerialNumber) == 0 {
+		t.Fatalf("serial numbers should be unique, both are %v", tst1.SerialNumber)
 	}
 }
 

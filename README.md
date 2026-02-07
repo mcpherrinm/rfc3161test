@@ -18,7 +18,7 @@ go build ./...
 go run ./cmd/tsakeygen -key tsa.key -cert tsa.crt
 ```
 
-This creates a 2048-bit RSA private key (`tsa.key`) and a self-signed certificate (`tsa.crt`) suitable for the TSA server. Use `-bits` to change the key size.
+This creates a 3072-bit RSA private key (`tsa.key`) and a self-signed certificate (`tsa.crt`) suitable for the TSA server. The certificate includes the `id-kp-timeStamping` extended key usage (critical) per the CA/Browser Forum Code Signing Baseline Requirements. Use `-bits` to change the key size (minimum 3072 per CSBR §6.1.5.2).
 
 ## Running the server
 

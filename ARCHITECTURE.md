@@ -57,9 +57,10 @@ TimeStampReq ::= SEQUENCE {
 Validation rules:
 - `version` must be 1.
 - `hashAlgorithm` OID must be recognized (SHA-256, SHA-384, SHA-512); reject with `badAlg` otherwise.
+- SHA-1 is explicitly rejected per CSBR §6.8 and §7.1.3.2.1.
 - `hashedMessage` length must match the algorithm's output size; reject with `badDataFormat` otherwise.
 - Extensions, if present and unrecognized, reject with `unacceptedExtension`.
-- Requested policy, if present and not the server's policy, reject with `unacceptedPolicy`.
+- Requested policy, if present and not the server's CSBR policy (2.23.140.1.4.2), reject with `unacceptedPolicy`.
 
 **response.go** — Build `TimeStampResp`:
 
@@ -88,7 +89,9 @@ On failure, return `PKIStatusInfo` with appropriate `PKIFailureInfo` bit and no 
 | SHA-256 | 2.16.840.1.101.3.4.2.1 |
 | SHA-384 | 2.16.840.1.101.3.4.2.2 |
 | SHA-512 | 2.16.840.1.101.3.4.2.3 |
-| TSA policy | 1.2.3.4.1 (configurable) |
+| SHA-1 (rejected) | 1.3.14.3.2.26 |
+| TSA policy (CSBR) | 2.23.140.1.4.2 |
+| id-kp-timeStamping | 1.3.6.1.5.5.7.3.8 |
 | id-aa-signingCertificateV2 | 1.2.840.113549.1.9.16.2.47 |
 
 ### 2. HTTP Server (`server/`)
@@ -113,8 +116,8 @@ Error cases:
 Command-line tool that generates a TSA RSA private key and self-signed certificate:
 
 - Accept flags: output paths for key and certificate files, RSA key size in bits.
-- Generate an RSA private key.
-- Create a self-signed X.509 certificate with digital signature key usage, valid for one year.
+- Generate an RSA private key (default 3072 bits per CSBR §6.1.5.2).
+- Create a self-signed X.509 certificate with digital signature key usage, `id-kp-timeStamping` EKU (critical, per CSBR §7.1.2.3(f)), valid for ~135 months (per CSBR §6.3.2).
 - Write the key as PEM-encoded `RSA PRIVATE KEY` (mode 0600) and the certificate as PEM-encoded `CERTIFICATE` (mode 0644).
 - Refuse to overwrite existing files (uses `O_EXCL`).
 
@@ -257,3 +260,4 @@ jobs:
 2. **RSA with SHA-256 for signing**: The TSA signs tokens with RSA PKCS#1 v1.5 + SHA-256. ECDSA support is straightforward to add later.
 3. **No persistence**: Serial numbers are in-memory. Acceptable for a reference/test implementation.
 4. **Minimal error surface**: Unrecognized extensions and policies are cleanly rejected per RFC requirements. No optional features beyond nonce support.
+5. **CSBR compliance**: The implementation follows the CA/Browser Forum Code Signing Baseline Requirements for Timestamp Authorities, including minimum 3072-bit RSA keys (§6.1.5.2), SHA-1 rejection (§6.8), the CSBR timestamp policy OID 2.23.140.1.4.2 (§1.2.2), critical `id-kp-timeStamping` EKU (§7.1.2.3(f)), and 135-month maximum certificate validity (§6.3.2).

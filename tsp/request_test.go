@@ -344,6 +344,41 @@ func TestParseRequestInvalidDER(t *testing.T) {
 	}
 }
 
+func TestParseRequestSHA1Rejected(t *testing.T) {
+	t.Parallel()
+
+	req := TimeStampReq{
+		Version: 1,
+		MessageImprint: MessageImprint{
+			HashAlgorithm: AlgorithmIdentifier{
+				Algorithm:  OIDSHA1,
+				Parameters: asn1.RawValue{}, //nolint:exhaustruct // optional ASN.1 field
+			},
+			HashedMessage: make([]byte, 20), // SHA-1 produces 20 bytes
+		},
+		ReqPolicy:  nil,
+		Nonce:      nil,
+		CertReq:    false,
+		Extensions: nil,
+	}
+
+	der := mustMarshalRequest(t, req)
+
+	_, err := ParseRequest(der)
+	if err == nil {
+		t.Fatal("expected error for SHA-1 algorithm")
+	}
+
+	var reqErr *RequestError
+	if !errors.As(err, &reqErr) {
+		t.Fatal("expected RequestError")
+	}
+
+	if reqErr.FailureInfo != FailureBadAlg {
+		t.Fatalf("failureInfo = %d, want %d", reqErr.FailureInfo, FailureBadAlg)
+	}
+}
+
 func TestParseRequestEmpty(t *testing.T) {
 	t.Parallel()
 

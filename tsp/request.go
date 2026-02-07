@@ -83,6 +83,7 @@ func unmarshalRequest(der []byte) (*TimeStampReq, error) {
 	input := cryptobyte.String(der)
 
 	var req TimeStampReq
+
 	var seq cryptobyte.String
 
 	if !input.ReadASN1(&seq, cbasn1.SEQUENCE) {
@@ -120,6 +121,7 @@ func unmarshalRequest(der []byte) (*TimeStampReq, error) {
 	if !algSeq.Empty() {
 		// Read optional parameters as raw bytes
 		var params cryptobyte.String
+
 		var tag cbasn1.Tag
 
 		if !algSeq.ReadAnyASN1Element(&params, &tag) {
@@ -259,9 +261,11 @@ func MarshalRequest(req *TimeStampReq) ([]byte, error) {
 				for _, ext := range req.Extensions {
 					b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 						b.AddASN1ObjectIdentifier(ext.ID)
+
 						if ext.Critical {
 							b.AddASN1Boolean(true)
 						}
+
 						b.AddASN1OctetString(ext.Value)
 					})
 				}
@@ -269,12 +273,18 @@ func MarshalRequest(req *TimeStampReq) ([]byte, error) {
 		}
 	})
 
-	return b.Bytes()
+	der, err := b.Bytes()
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	return der, nil
 }
 
 func addAlgorithmIdentifier(b *cryptobyte.Builder, alg AlgorithmIdentifier) {
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 		b.AddASN1ObjectIdentifier(alg.Algorithm)
+
 		if len(alg.Parameters) > 0 {
 			b.AddBytes(alg.Parameters)
 		}

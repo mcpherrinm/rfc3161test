@@ -158,6 +158,7 @@ func marshalPKIStatusInfo(status PKIStatus, failInfo asn1.BitString) ([]byte, er
 	var b cryptobyte.Builder
 	b.AddASN1(cbasn1.SEQUENCE, func(b *cryptobyte.Builder) {
 		b.AddASN1Int64(int64(status))
+
 		if len(failInfo.Bytes) > 0 {
 			addASN1BitStringRaw(b, failInfo)
 		}

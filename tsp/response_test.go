@@ -542,7 +542,7 @@ func extractHasCertificates(t *testing.T, resp *TimeStampResp) bool {
 }
 
 // extractSignerInfoParts returns the raw signed attributes DER and signature.
-func extractSignerInfoParts(t *testing.T, resp *TimeStampResp) (signedAttrsDER, signature []byte) {
+func extractSignerInfoParts(t *testing.T, resp *TimeStampResp) ([]byte, []byte) {
 	t.Helper()
 
 	sdContent := extractSignedDataContent(t, resp)
@@ -603,19 +603,18 @@ func extractSignerInfoParts(t *testing.T, resp *TimeStampResp) (signedAttrsDER, 
 		t.Fatal("failed to read signedAttrs element")
 	}
 
-	signedAttrsDER = []byte(rawAttrs)
-
 	// signatureAlgorithm SEQUENCE
 	if !siSeq.SkipASN1(cbasn1.SEQUENCE) {
 		t.Fatal("failed to skip signatureAlgorithm")
 	}
 
 	// signature OCTET STRING
-	if !siSeq.ReadASN1Bytes(&signature, cbasn1.OCTET_STRING) {
+	var sig []byte
+	if !siSeq.ReadASN1Bytes(&sig, cbasn1.OCTET_STRING) {
 		t.Fatal("failed to read signature")
 	}
 
-	return signedAttrsDER, signature
+	return []byte(rawAttrs), sig
 }
 
 // extractEContentType returns the eContentType OID from the SignedData.

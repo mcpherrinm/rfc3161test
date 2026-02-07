@@ -6,18 +6,21 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/pem"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
 	"time"
+
+	"github.com/mcpherrinm/rfc3161test/tsp"
 )
 
 const (
-	defaultKeySize = 2048
+	defaultKeySize = 3072
 	serialBitLen   = 128
-	certDuration   = 365 * 24 * time.Hour
+	certDuration   = 135 * 30 * 24 * time.Hour // ~135 months per CSBR §6.3.2
 	keyFileMode    = 0o600
 	certFileMode   = 0o644
 )
@@ -51,6 +54,14 @@ func generate(keyPath, certPath string, bits int) error {
 
 	now := time.Now()
 
+	// Marshal id-kp-timeStamping EKU as a critical extension per CSBR §7.1.2.3(f).
+	ekuValue, err := asn1.Marshal([]asn1.ObjectIdentifier{
+		tsp.OIDExtKeyUsageTimeStamping,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal EKU: %w", err)
+	}
+
 	tmpl := &x509.Certificate{ //nolint:exhaustruct // only setting relevant fields
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: "RFC 3161 Test TSA"}, //nolint:exhaustruct // only CN needed
@@ -58,6 +69,13 @@ func generate(keyPath, certPath string, bits int) error {
 		NotAfter:              now.Add(certDuration),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
+		ExtraExtensions: []pkix.Extension{
+			{
+				Id:       tsp.OIDExtKeyUsage,
+				Critical: true,
+				Value:    ekuValue,
+			},
+		},
 	}
 
 	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)

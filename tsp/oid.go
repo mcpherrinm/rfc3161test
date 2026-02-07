@@ -19,8 +19,14 @@ var (
 	OIDSHA384 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 2}
 	// OIDSHA512 is the OID for SHA-512.
 	OIDSHA512 = asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 3}
-	// OIDDefaultPolicy is the default TSA policy OID.
-	OIDDefaultPolicy = asn1.ObjectIdentifier{1, 2, 3, 4, 1}
+	// OIDSHA1 is the OID for SHA-1, which is rejected per CSBR §6.8.
+	OIDSHA1 = asn1.ObjectIdentifier{1, 3, 14, 3, 2, 26}
+	// OIDDefaultPolicy is the CA/Browser Forum Timestamp policy OID per CSBR §1.2.2.
+	OIDDefaultPolicy = asn1.ObjectIdentifier{2, 23, 140, 1, 4, 2}
+	// OIDExtKeyUsageTimeStamping is the id-kp-timeStamping OID per RFC 5280.
+	OIDExtKeyUsageTimeStamping = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 8}
+	// OIDExtKeyUsage is the OID for the id-ce-extKeyUsage extension.
+	OIDExtKeyUsage = asn1.ObjectIdentifier{2, 5, 29, 37}
 	// OIDAttributeContentType is the OID for the content-type attribute.
 	OIDAttributeContentType = asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 9, 3}
 	// OIDAttributeMessageDigest is the OID for the message-digest attribute.

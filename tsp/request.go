@@ -87,6 +87,10 @@ func validateRequest(req *TimeStampReq) error {
 		return &RequestError{FailureInfo: FailureBadDataFormat, Detail: "unsupported version"}
 	}
 
+	if req.MessageImprint.HashAlgorithm.Algorithm.Equal(OIDSHA1) {
+		return &RequestError{FailureInfo: FailureBadAlg, Detail: "SHA-1 is not permitted per CSBR"}
+	}
+
 	expected, ok := hashLength(req.MessageImprint.HashAlgorithm.Algorithm)
 	if !ok {
 		return &RequestError{FailureInfo: FailureBadAlg, Detail: "unsupported hash algorithm"}

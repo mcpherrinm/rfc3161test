@@ -401,6 +401,31 @@ func TestCreateResponseSigningCertificateV2(t *testing.T) {
 	}
 }
 
+func TestCreateResponseCSBRPolicyOID(t *testing.T) {
+	t.Parallel()
+
+	signer := testSigner(t)
+	req := validRequest(t)
+
+	respDER, err := signer.CreateResponse(&req)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := ParseResponse(respDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tstInfo := extractTSTInfo(t, resp)
+
+	// CSBR §1.2.2 requires the TSA policy OID 2.23.140.1.4.2.
+	expectedOID := asn1.ObjectIdentifier{2, 23, 140, 1, 4, 2}
+	if !tstInfo.Policy.Equal(expectedOID) {
+		t.Fatalf("TSTInfo policy = %v, want %v (CSBR TSA policy)", tstInfo.Policy, expectedOID)
+	}
+}
+
 func TestCreateErrorResponse(t *testing.T) {
 	t.Parallel()
 
